@@ -1,0 +1,4 @@
+.DS_Store
+.npm-cache/
+.vercel/
+node_modules/

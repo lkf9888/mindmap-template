@@ -1,0 +1,1664 @@
+const canvas = document.querySelector("#canvas");
+const world = document.querySelector("#world");
+const nodesLayer = document.querySelector("#nodesLayer");
+const edgesLayer = document.querySelector("#edgesLayer");
+const contextMenu = document.querySelector("#contextMenu");
+
+const addNodeBtn = document.querySelector("#addNodeBtn");
+const connectBtn = document.querySelector("#connectBtn");
+const deleteBtn = document.querySelector("#deleteBtn");
+const zoomOutBtn = document.querySelector("#zoomOutBtn");
+const zoomInBtn = document.querySelector("#zoomInBtn");
+const resetViewBtn = document.querySelector("#resetViewBtn");
+const layoutHorizontalBtn = document.querySelector("#layoutHorizontalBtn");
+const layoutVerticalBtn = document.querySelector("#layoutVerticalBtn");
+const shareBtn = document.querySelector("#shareBtn");
+const languageBtn = document.querySelector("#languageBtn");
+const readonlyBadge = document.querySelector("#readonlyBadge");
+const newMapBtn = document.querySelector("#newMapBtn");
+const mapTitleInput = document.querySelector("#mapTitleInput");
+const mapList = document.querySelector("#mapList");
+
+const selectionHint = document.querySelector("#selectionHint");
+const readonlyNotice = document.querySelector("#readonlyNotice");
+const nodeForm = document.querySelector("#nodeForm");
+const edgeForm = document.querySelector("#edgeForm");
+const nodeType = document.querySelector("#nodeType");
+const nodeText = document.querySelector("#nodeText");
+const nodeUrl = document.querySelector("#nodeUrl");
+const nodeUrlLabel = document.querySelector("#nodeUrlLabel");
+const nodeShape = document.querySelector("#nodeShape");
+const nodeColor = document.querySelector("#nodeColor");
+const nodeFontSize = document.querySelector("#nodeFontSize");
+const nodeFontFamily = document.querySelector("#nodeFontFamily");
+const edgeLabel = document.querySelector("#edgeLabel");
+const edgeShape = document.querySelector("#edgeShape");
+const edgeArrow = document.querySelector("#edgeArrow");
+const edgeColor = document.querySelector("#edgeColor");
+const zoomLabel = document.querySelector("#zoomLabel");
+const modeLabel = document.querySelector("#modeLabel");
+const canvasHelp = document.querySelector(".canvas-help");
+
+const MAP_STORAGE_KEY = "mindmap-template.maps.v1";
+const LOCALE_STORAGE_KEY = "mindmap-template.locale";
+const fontFamilies = {
+  system: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif',
+  serif: 'Georgia, "Times New Roman", "Noto Serif SC", serif',
+  mono: '"SFMono-Regular", Consolas, "Liberation Mono", "Noto Sans Mono CJK SC", monospace',
+  rounded: '"Arial Rounded MT Bold", "Nunito", "Noto Sans SC", sans-serif',
+};
+
+const state = {
+  nodes: [
+    {
+      id: "node-1",
+      x: 260,
+      y: 230,
+      type: "title",
+      text: "项目计划",
+      url: "",
+      color: "#dbeafe",
+      shape: "rounded",
+      width: 184,
+      height: 76,
+      fontSize: 18,
+      fontFamily: "system",
+    },
+    {
+      id: "node-2",
+      x: 560,
+      y: 130,
+      type: "paragraph",
+      text: "收集需求、确认目标用户和主要使用场景。",
+      url: "",
+      color: "#dcfce7",
+      shape: "note",
+      width: 220,
+      height: 92,
+      fontSize: 14,
+      fontFamily: "system",
+    },
+    {
+      id: "node-3",
+      x: 560,
+      y: 330,
+      type: "title",
+      text: "设计原型",
+      url: "",
+      color: "#fef3c7",
+      shape: "pill",
+      width: 184,
+      height: 72,
+      fontSize: 18,
+      fontFamily: "system",
+    },
+    {
+      id: "node-4",
+      x: 860,
+      y: 230,
+      type: "link",
+      text: "参考资料",
+      url: "https://example.com",
+      color: "#fce7f3",
+      shape: "circle",
+      width: 136,
+      height: 136,
+      fontSize: 14,
+      fontFamily: "system",
+    },
+  ],
+  edges: [
+    {
+      id: "edge-1",
+      from: "node-1",
+      to: "node-2",
+      color: "#2563eb",
+      shape: "curved",
+      arrow: "forward",
+      label: "需求输入",
+    },
+    {
+      id: "edge-2",
+      from: "node-1",
+      to: "node-3",
+      color: "#0f766e",
+      shape: "elbow",
+      arrow: "forward",
+      label: "进入设计",
+    },
+    {
+      id: "edge-3",
+      from: "node-3",
+      to: "node-4",
+      color: "#9333ea",
+      shape: "straight",
+      arrow: "both",
+      label: "双向参考",
+    },
+  ],
+  selectedNodeId: "node-1",
+  selectedEdgeId: null,
+  connectFromId: null,
+  mode: "select",
+  scale: 1,
+  pan: { x: 80, y: 60 },
+  drag: null,
+  nextNodeId: 5,
+  nextEdgeId: 4,
+  readOnly: false,
+  maps: [],
+  activeMapId: "map-default",
+  activeMapTitle: "项目计划",
+  locale: localStorage.getItem(LOCALE_STORAGE_KEY) === "en" ? "en" : "zh",
+};
+
+const allowedNodeTypes = new Set(["title", "paragraph", "link"]);
+const allowedNodeShapes = new Set(["rounded", "pill", "circle", "diamond", "note"]);
+const allowedEdgeShapes = new Set(["curved", "straight", "elbow"]);
+const allowedEdgeArrows = new Set(["forward", "backward", "both", "none"]);
+const allowedFontFamilies = new Set(Object.keys(fontFamilies));
+
+const i18n = {
+  zh: {
+    "app.title": "思维脑图绘制模板",
+    "app.subtitle": "简易脑图模板",
+    "toolbar.addNode": "新建节点",
+    "toolbar.connect": "连接",
+    "toolbar.delete": "删除",
+    "toolbar.zoomOut": "缩小",
+    "toolbar.zoomIn": "放大",
+    "toolbar.reset": "归位",
+    "toolbar.horizontal": "横向排布",
+    "toolbar.vertical": "纵向排布",
+    "toolbar.share": "分享只读链接",
+    "toolbar.shareCopied": "已复制",
+    "toolbar.shareCreated": "已生成",
+    "toolbar.readonlyBadge": "只读查看",
+    "maps.title": "脑图目录",
+    "maps.new": "新建",
+    "maps.currentName": "当前脑图名称",
+    "maps.defaultTitle": "项目计划",
+    "maps.untitled": "未命名脑图",
+    "maps.sharedTitle": "分享脑图",
+    "maps.nodeCount": "{count} 个节点",
+    "maps.edgeCount": "{count} 条连接",
+    "canvas.helpEdit": "右键创建/删除 · 滚轮缩放 · 拖动画布平移 · 拖动节点移动 · 拖右下角调整节点大小",
+    "canvas.helpReadonly": "只读查看 · 滚轮缩放 · 拖动画布平移 · 点击节点或连接线查看属性",
+    "inspector.selection": "选择内容",
+    "inspector.selectionHint": "选择一个节点或连接线后，在这里编辑属性。",
+    "inspector.readonlyNotice": "当前是只读分享视图，可以查看、缩放和平移，不能编辑内容。",
+    "node.title": "节点属性",
+    "node.type": "类型",
+    "node.typeTitle": "标题",
+    "node.typeParagraph": "文字段落",
+    "node.typeLink": "超链接",
+    "node.content": "内容",
+    "node.url": "链接地址",
+    "node.shape": "形状",
+    "node.shapeRounded": "圆角矩形",
+    "node.shapePill": "胶囊",
+    "node.shapeCircle": "圆形",
+    "node.shapeDiamond": "菱形",
+    "node.shapeNote": "便签",
+    "node.color": "颜色",
+    "node.fontSize": "文字大小",
+    "node.fontFamily": "字体",
+    "node.fontSystem": "系统默认",
+    "node.fontSerif": "衬线字体",
+    "node.fontMono": "等宽字体",
+    "node.fontRounded": "圆润字体",
+    "node.new": "新节点",
+    "node.child": "子节点",
+    "node.branch": "新分支",
+    "node.untitledTitle": "未命名标题",
+    "node.paragraphFallback": "文字段落",
+    "node.linkFallback": "超链接",
+    "edge.title": "连接线属性",
+    "edge.label": "文字注释",
+    "edge.labelPlaceholder": "例如：依赖、参考、下一步",
+    "edge.shape": "线条形状",
+    "edge.shapeCurved": "曲线",
+    "edge.shapeStraight": "直线",
+    "edge.shapeElbow": "折线",
+    "edge.arrow": "箭头方向",
+    "edge.arrowForward": "正向",
+    "edge.arrowBackward": "反向",
+    "edge.arrowBoth": "双向",
+    "edge.arrowNone": "无箭头",
+    "edge.color": "颜色",
+    "view.title": "视图",
+    "view.zoom": "缩放",
+    "view.mode": "模式",
+    "mode.select": "选择",
+    "mode.connect": "连接",
+    "mode.readonly": "只读",
+    "menu.connectFrom": "从此节点开始连线",
+    "menu.copyChild": "复制一个子节点",
+    "menu.deleteNode": "删除节点",
+    "menu.reverseArrow": "反转箭头",
+    "menu.deleteEdge": "删除连接线",
+    "menu.createHere": "在这里新建节点",
+    "menu.createLinked": "新建并连接所选节点",
+    "menu.clearSelection": "清除选择",
+    "prompt.copyReadonly": "复制这个只读链接",
+  },
+  en: {
+    "app.title": "Mind Map Drawing Template",
+    "app.subtitle": "Simple mind map template",
+    "toolbar.addNode": "New node",
+    "toolbar.connect": "Connect",
+    "toolbar.delete": "Delete",
+    "toolbar.zoomOut": "Zoom out",
+    "toolbar.zoomIn": "Zoom in",
+    "toolbar.reset": "Reset",
+    "toolbar.horizontal": "Horizontal",
+    "toolbar.vertical": "Vertical",
+    "toolbar.share": "Share read-only link",
+    "toolbar.shareCopied": "Copied",
+    "toolbar.shareCreated": "Created",
+    "toolbar.readonlyBadge": "Read only",
+    "maps.title": "Mind maps",
+    "maps.new": "New",
+    "maps.currentName": "Current map name",
+    "maps.defaultTitle": "Project plan",
+    "maps.untitled": "Untitled map",
+    "maps.sharedTitle": "Shared map",
+    "maps.nodeCount": "{count} nodes",
+    "maps.edgeCount": "{count} links",
+    "canvas.helpEdit": "Right-click to create/delete · Wheel to zoom · Drag canvas to pan · Drag nodes to move · Drag lower-right handle to resize",
+    "canvas.helpReadonly": "Read-only view · Wheel to zoom · Drag canvas to pan · Click nodes or links to inspect",
+    "inspector.selection": "Selection",
+    "inspector.selectionHint": "Select a node or link, then edit its properties here.",
+    "inspector.readonlyNotice": "This is a read-only shared view. You can inspect, zoom, and pan, but cannot edit.",
+    "node.title": "Node properties",
+    "node.type": "Type",
+    "node.typeTitle": "Title",
+    "node.typeParagraph": "Paragraph",
+    "node.typeLink": "Link",
+    "node.content": "Content",
+    "node.url": "URL",
+    "node.shape": "Shape",
+    "node.shapeRounded": "Rounded rectangle",
+    "node.shapePill": "Pill",
+    "node.shapeCircle": "Circle",
+    "node.shapeDiamond": "Diamond",
+    "node.shapeNote": "Note",
+    "node.color": "Color",
+    "node.fontSize": "Font size",
+    "node.fontFamily": "Font",
+    "node.fontSystem": "System",
+    "node.fontSerif": "Serif",
+    "node.fontMono": "Monospace",
+    "node.fontRounded": "Rounded",
+    "node.new": "New node",
+    "node.child": "Child node",
+    "node.branch": "New branch",
+    "node.untitledTitle": "Untitled title",
+    "node.paragraphFallback": "Paragraph",
+    "node.linkFallback": "Link",
+    "edge.title": "Link properties",
+    "edge.label": "Text note",
+    "edge.labelPlaceholder": "Example: depends on, reference, next step",
+    "edge.shape": "Line shape",
+    "edge.shapeCurved": "Curve",
+    "edge.shapeStraight": "Straight",
+    "edge.shapeElbow": "Elbow",
+    "edge.arrow": "Arrow direction",
+    "edge.arrowForward": "Forward",
+    "edge.arrowBackward": "Backward",
+    "edge.arrowBoth": "Both",
+    "edge.arrowNone": "None",
+    "edge.color": "Color",
+    "view.title": "View",
+    "view.zoom": "Zoom",
+    "view.mode": "Mode",
+    "mode.select": "Select",
+    "mode.connect": "Connect",
+    "mode.readonly": "Read only",
+    "menu.connectFrom": "Start link here",
+    "menu.copyChild": "Create child copy",
+    "menu.deleteNode": "Delete node",
+    "menu.reverseArrow": "Reverse arrow",
+    "menu.deleteEdge": "Delete link",
+    "menu.createHere": "Create node here",
+    "menu.createLinked": "Create and link selected node",
+    "menu.clearSelection": "Clear selection",
+    "prompt.copyReadonly": "Copy this read-only link",
+  },
+};
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function t(key, replacements = {}) {
+  const template = i18n[state.locale]?.[key] || i18n.zh[key] || key;
+  return Object.entries(replacements).reduce((text, [name, value]) => {
+    return text.replaceAll(`{${name}}`, value);
+  }, template);
+}
+
+function applyLocale() {
+  document.documentElement.lang = state.locale === "en" ? "en" : "zh-CN";
+  document.title = t("app.title");
+
+  document.querySelectorAll("[data-i18n]").forEach((element) => {
+    element.textContent = t(element.dataset.i18n);
+  });
+
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((element) => {
+    element.setAttribute("placeholder", t(element.dataset.i18nPlaceholder));
+  });
+
+  languageBtn.textContent = state.locale === "zh" ? "EN" : "中文";
+  languageBtn.setAttribute("aria-pressed", String(state.locale === "en"));
+  setMode(state.mode === "connect" ? "connect" : "select");
+  syncReadOnlyControls();
+  renderMapList();
+}
+
+function getNode(id) {
+  return state.nodes.find((node) => node.id === id);
+}
+
+function getEdge(id) {
+  return state.edges.find((edge) => edge.id === id);
+}
+
+function setMode(mode) {
+  if (state.readOnly) {
+    state.mode = "readonly";
+    state.connectFromId = null;
+    connectBtn.classList.remove("is-active");
+    modeLabel.textContent = t("mode.readonly");
+    return;
+  }
+
+  state.mode = mode;
+  connectBtn.classList.toggle("is-active", mode === "connect");
+  modeLabel.textContent = mode === "connect" ? t("mode.connect") : t("mode.select");
+}
+
+function selectNode(id) {
+  state.selectedNodeId = id;
+  state.selectedEdgeId = null;
+  render();
+}
+
+function selectEdge(id) {
+  state.selectedEdgeId = id;
+  state.selectedNodeId = null;
+  render();
+}
+
+function clearSelection() {
+  state.selectedNodeId = null;
+  state.selectedEdgeId = null;
+  state.connectFromId = null;
+  setMode("select");
+  render();
+}
+
+function worldPointFromEvent(event) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (event.clientX - rect.left - state.pan.x) / state.scale,
+    y: (event.clientY - rect.top - state.pan.y) / state.scale,
+  };
+}
+
+function viewportCenterAsWorldPoint() {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (rect.width / 2 - state.pan.x) / state.scale,
+    y: (rect.height / 2 - state.pan.y) / state.scale,
+  };
+}
+
+function applyTransform({ animate = false } = {}) {
+  world.classList.toggle("is-zooming", animate);
+  world.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.scale})`;
+  zoomLabel.textContent = `${Math.round(state.scale * 100)}%`;
+
+  if (animate) {
+    window.setTimeout(() => world.classList.remove("is-zooming"), 130);
+  }
+}
+
+function createNode(point, options = {}) {
+  if (state.readOnly) {
+    return null;
+  }
+
+  const newNode = {
+    id: `node-${state.nextNodeId++}`,
+    x: clamp(point.x - 92, 10, 4800),
+    y: clamp(point.y - 38, 10, 3400),
+    type: options.type || "title",
+    text: options.text || t("node.new"),
+    url: "",
+    color: options.color || "#e0f2fe",
+    shape: options.shape || "rounded",
+    width: options.width || 184,
+    height: options.height || 76,
+    fontSize: options.fontSize || 18,
+    fontFamily: options.fontFamily || "system",
+  };
+
+  state.nodes.push(newNode);
+
+  if (options.connectFromId) {
+    createEdge(options.connectFromId, newNode.id);
+  }
+
+  selectNode(newNode.id);
+  persistActiveMap();
+  return newNode;
+}
+
+function createEdge(from, to) {
+  if (state.readOnly) {
+    return null;
+  }
+
+  if (!from || !to || from === to) {
+    return null;
+  }
+
+  const duplicate = state.edges.find((edge) => edge.from === from && edge.to === to);
+  if (duplicate) {
+    selectEdge(duplicate.id);
+    return duplicate;
+  }
+
+  const edge = {
+    id: `edge-${state.nextEdgeId++}`,
+    from,
+    to,
+    color: "#2563eb",
+    shape: "curved",
+    arrow: "forward",
+    label: "",
+  };
+
+  state.edges.push(edge);
+  selectEdge(edge.id);
+  persistActiveMap();
+  return edge;
+}
+
+function deleteSelected() {
+  if (state.readOnly) {
+    return;
+  }
+
+  if (state.selectedNodeId) {
+    const id = state.selectedNodeId;
+    state.nodes = state.nodes.filter((node) => node.id !== id);
+    state.edges = state.edges.filter((edge) => edge.from !== id && edge.to !== id);
+    state.selectedNodeId = null;
+    state.connectFromId = null;
+  } else if (state.selectedEdgeId) {
+    const id = state.selectedEdgeId;
+    state.edges = state.edges.filter((edge) => edge.id !== id);
+    state.selectedEdgeId = null;
+  }
+
+  setMode("select");
+  render();
+  persistActiveMap();
+}
+
+function render() {
+  renderNodes();
+  requestAnimationFrame(renderEdges);
+  syncInspector();
+  applyTransform();
+}
+
+function renderNodes() {
+  nodesLayer.innerHTML = "";
+
+  state.nodes.forEach((node) => {
+    const dimensions = getNodeDimensions(node);
+    const element = document.createElement("article");
+    element.className = `node node--${node.shape}`;
+    element.dataset.id = node.id;
+    element.style.left = `${node.x}px`;
+    element.style.top = `${node.y}px`;
+    element.style.width = `${dimensions.width}px`;
+    element.style.height = `${dimensions.height}px`;
+    element.style.background = node.color;
+    element.classList.toggle("is-selected", node.id === state.selectedNodeId);
+    element.classList.toggle("is-readonly", state.readOnly);
+
+    const content = document.createElement("div");
+    content.className = "node-content";
+    content.style.fontFamily = fontFamilies[node.fontFamily] || fontFamilies.system;
+
+    if (node.type === "title") {
+      const title = document.createElement("h3");
+      title.style.fontSize = `${getNodeFontSize(node)}px`;
+      title.textContent = node.text || t("node.untitledTitle");
+      content.append(title);
+    } else if (node.type === "link") {
+      const link = document.createElement("a");
+      link.href = node.url || "#";
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.style.fontSize = `${getNodeFontSize(node)}px`;
+      link.textContent = node.text || node.url || t("node.linkFallback");
+      content.append(link);
+    } else {
+      const paragraph = document.createElement("p");
+      paragraph.style.fontSize = `${getNodeFontSize(node)}px`;
+      paragraph.textContent = node.text || t("node.paragraphFallback");
+      content.append(paragraph);
+    }
+
+    element.append(content);
+
+    if (!state.readOnly) {
+      const resizeHandle = document.createElement("span");
+      resizeHandle.className = "node-resize-handle";
+      resizeHandle.dataset.id = node.id;
+      element.append(resizeHandle);
+    }
+
+    nodesLayer.append(element);
+  });
+}
+
+function getNodeDimensions(node) {
+  const defaultDimensions = getDefaultNodeDimensions(node.shape);
+  return {
+    width: clamp(finiteNumber(node.width, defaultDimensions.width), 96, 520),
+    height: clamp(finiteNumber(node.height, defaultDimensions.height), 56, 360),
+  };
+}
+
+function getDefaultNodeDimensions(shape) {
+  if (shape === "circle") {
+    return { width: 136, height: 136 };
+  }
+
+  if (shape === "diamond") {
+    return { width: 154, height: 154 };
+  }
+
+  if (shape === "pill") {
+    return { width: 184, height: 72 };
+  }
+
+  return { width: 184, height: 76 };
+}
+
+function getNodeFontSize(node) {
+  return clamp(finiteNumber(node.fontSize, node.type === "title" ? 18 : 14), 10, 48);
+}
+
+function renderEdges() {
+  const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  edgesLayer.replaceChildren(defs);
+
+  state.edges.forEach((edge) => {
+    const fromBounds = getNodeBounds(edge.from);
+    const toBounds = getNodeBounds(edge.to);
+
+    if (!fromBounds || !toBounds) {
+      return;
+    }
+
+    const pathData = buildEdgePath(edge, fromBounds, toBounds);
+    const markerIds = ensureMarkers(defs, edge);
+
+    const visiblePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    visiblePath.setAttribute("d", pathData);
+    visiblePath.setAttribute("stroke", edge.color);
+    visiblePath.setAttribute("stroke-width", edge.id === state.selectedEdgeId ? "4" : "3");
+    visiblePath.setAttribute("class", `edge-path${edge.id === state.selectedEdgeId ? " is-selected" : ""}`);
+    visiblePath.dataset.id = edge.id;
+
+    if (edge.arrow === "forward" || edge.arrow === "both") {
+      visiblePath.setAttribute("marker-end", `url(#${markerIds.end})`);
+    }
+
+    if (edge.arrow === "backward" || edge.arrow === "both") {
+      visiblePath.setAttribute("marker-start", `url(#${markerIds.start})`);
+    }
+
+    const hitPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    hitPath.setAttribute("d", pathData);
+    hitPath.setAttribute("class", "edge-hitbox");
+    hitPath.dataset.id = edge.id;
+
+    edgesLayer.append(hitPath, visiblePath);
+
+    const label = createEdgeLabel(edge, fromBounds, toBounds);
+    if (label) {
+      edgesLayer.append(label);
+    }
+  });
+}
+
+function createEdgeLabel(edge, from, to) {
+  const text = edge.label?.trim();
+  if (!text) {
+    return null;
+  }
+
+  const position = getEdgeLabelPosition(edge, from, to);
+  const width = clamp(text.length * 12 + 30, 82, 240);
+  const height = text.length > 16 ? 42 : 30;
+  const label = document.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
+  label.setAttribute("x", `${position.x - width / 2}`);
+  label.setAttribute("y", `${position.y - height / 2}`);
+  label.setAttribute("width", `${width}`);
+  label.setAttribute("height", `${height}`);
+  label.setAttribute("class", `edge-label${edge.id === state.selectedEdgeId ? " is-selected" : ""}`);
+  label.dataset.id = edge.id;
+
+  const box = document.createElement("div");
+  box.className = "edge-label-box";
+  box.textContent = text;
+  label.append(box);
+
+  return label;
+}
+
+function getNodeBounds(id) {
+  const node = getNode(id);
+  const element = nodesLayer.querySelector(`[data-id="${id}"]`);
+
+  if (!node || !element) {
+    return null;
+  }
+
+  return {
+    x: node.x,
+    y: node.y,
+    width: element.offsetWidth,
+    height: element.offsetHeight,
+    centerX: node.x + element.offsetWidth / 2,
+    centerY: node.y + element.offsetHeight / 2,
+  };
+}
+
+function buildEdgePath(edge, from, to) {
+  const x1 = from.centerX;
+  const y1 = from.centerY;
+  const x2 = to.centerX;
+  const y2 = to.centerY;
+
+  if (edge.shape === "straight") {
+    return `M ${x1} ${y1} L ${x2} ${y2}`;
+  }
+
+  if (edge.shape === "elbow") {
+    const midX = x1 + (x2 - x1) / 2;
+    return `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+  }
+
+  const distance = Math.max(80, Math.abs(x2 - x1) * 0.45);
+  const controlX1 = x1 + (x2 >= x1 ? distance : -distance);
+  const controlX2 = x2 - (x2 >= x1 ? distance : -distance);
+  return `M ${x1} ${y1} C ${controlX1} ${y1}, ${controlX2} ${y2}, ${x2} ${y2}`;
+}
+
+function getEdgeLabelPosition(edge, from, to) {
+  const x1 = from.centerX;
+  const y1 = from.centerY;
+  const x2 = to.centerX;
+  const y2 = to.centerY;
+
+  if (edge.shape === "elbow") {
+    return {
+      x: x1 + (x2 - x1) / 2,
+      y: y1 + (y2 - y1) / 2,
+    };
+  }
+
+  if (edge.shape === "curved") {
+    const distance = Math.max(80, Math.abs(x2 - x1) * 0.45);
+    const controlX1 = x1 + (x2 >= x1 ? distance : -distance);
+    const controlX2 = x2 - (x2 >= x1 ? distance : -distance);
+    const t = 0.5;
+    const oneMinusT = 1 - t;
+
+    return {
+      x:
+        oneMinusT ** 3 * x1 +
+        3 * oneMinusT ** 2 * t * controlX1 +
+        3 * oneMinusT * t ** 2 * controlX2 +
+        t ** 3 * x2,
+      y:
+        oneMinusT ** 3 * y1 +
+        3 * oneMinusT ** 2 * t * y1 +
+        3 * oneMinusT * t ** 2 * y2 +
+        t ** 3 * y2,
+    };
+  }
+
+  return {
+    x: x1 + (x2 - x1) / 2,
+    y: y1 + (y2 - y1) / 2,
+  };
+}
+
+function ensureMarkers(defs, edge) {
+  const startId = `${edge.id}-arrow-start`;
+  const endId = `${edge.id}-arrow-end`;
+  const markerData = [
+    { id: startId, orient: "auto-start-reverse" },
+    { id: endId, orient: "auto" },
+  ];
+
+  markerData.forEach((data) => {
+    const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+    marker.setAttribute("id", data.id);
+    marker.setAttribute("viewBox", "0 0 10 10");
+    marker.setAttribute("refX", "8");
+    marker.setAttribute("refY", "5");
+    marker.setAttribute("markerWidth", "7");
+    marker.setAttribute("markerHeight", "7");
+    marker.setAttribute("orient", data.orient);
+
+    const arrow = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    arrow.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
+    arrow.setAttribute("fill", edge.color);
+    marker.append(arrow);
+    defs.append(marker);
+  });
+
+  return { start: startId, end: endId };
+}
+
+function syncInspector() {
+  const node = state.selectedNodeId ? getNode(state.selectedNodeId) : null;
+  const edge = state.selectedEdgeId ? getEdge(state.selectedEdgeId) : null;
+
+  selectionHint.hidden = Boolean(node || edge);
+  nodeForm.hidden = !node;
+  edgeForm.hidden = !edge;
+  readonlyNotice.hidden = !state.readOnly;
+
+  if (node) {
+    nodeType.value = node.type;
+    nodeText.value = node.text;
+    nodeUrl.value = node.url;
+    nodeUrlLabel.hidden = node.type !== "link";
+    nodeShape.value = node.shape;
+    nodeColor.value = node.color;
+    nodeFontSize.value = getNodeFontSize(node);
+    nodeFontFamily.value = allowedFontFamilies.has(node.fontFamily) ? node.fontFamily : "system";
+  }
+
+  if (edge) {
+    edgeLabel.value = edge.label || "";
+    edgeShape.value = edge.shape;
+    edgeArrow.value = edge.arrow;
+    edgeColor.value = edge.color;
+  }
+
+  syncReadOnlyControls();
+}
+
+function syncReadOnlyControls() {
+  const editButtons = [addNodeBtn, connectBtn, deleteBtn, layoutHorizontalBtn, layoutVerticalBtn, newMapBtn];
+  editButtons.forEach((button) => {
+    button.disabled = state.readOnly;
+  });
+
+  mapTitleInput.disabled = state.readOnly;
+
+  [nodeForm, edgeForm].forEach((form) => {
+    form.querySelectorAll("input, select, textarea").forEach((control) => {
+      control.disabled = state.readOnly;
+    });
+  });
+
+  readonlyBadge.hidden = !state.readOnly;
+  canvasHelp.textContent = state.readOnly ? t("canvas.helpReadonly") : t("canvas.helpEdit");
+}
+
+function openContextMenu(event, items) {
+  contextMenu.replaceChildren();
+
+  items.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = item.label;
+    button.className = item.danger ? "danger" : "";
+    button.addEventListener("click", () => {
+      closeContextMenu();
+      item.action();
+    });
+    contextMenu.append(button);
+  });
+
+  contextMenu.hidden = false;
+  const menuRect = contextMenu.getBoundingClientRect();
+  const left = Math.min(event.clientX, window.innerWidth - menuRect.width - 8);
+  const top = Math.min(event.clientY, window.innerHeight - menuRect.height - 8);
+  contextMenu.style.left = `${left}px`;
+  contextMenu.style.top = `${top}px`;
+}
+
+function closeContextMenu() {
+  contextMenu.hidden = true;
+}
+
+function handleNodePointerDown(event) {
+  const nodeElement = event.target.closest(".node");
+  if (!nodeElement || event.button !== 0) {
+    return;
+  }
+
+  const node = getNode(nodeElement.dataset.id);
+  if (!node) {
+    return;
+  }
+
+  event.stopPropagation();
+
+  if (state.readOnly) {
+    selectNode(node.id);
+    return;
+  }
+
+  if (event.target.closest(".node-resize-handle")) {
+    const point = worldPointFromEvent(event);
+    const dimensions = getNodeDimensions(node);
+    selectNode(node.id);
+    state.drag = {
+      type: "resize-node",
+      id: node.id,
+      startX: point.x,
+      startY: point.y,
+      startWidth: dimensions.width,
+      startHeight: dimensions.height,
+    };
+    return;
+  }
+
+  if (state.mode === "connect") {
+    if (state.connectFromId && state.connectFromId !== node.id) {
+      createEdge(state.connectFromId, node.id);
+      state.connectFromId = null;
+      setMode("select");
+      render();
+    } else {
+      state.connectFromId = node.id;
+      selectNode(node.id);
+    }
+    return;
+  }
+
+  selectNode(node.id);
+
+  const startPoint = worldPointFromEvent(event);
+  state.drag = {
+    type: "node",
+    id: node.id,
+    offsetX: startPoint.x - node.x,
+    offsetY: startPoint.y - node.y,
+  };
+}
+
+function handleCanvasPointerDown(event) {
+  if (
+    event.button !== 0 ||
+    event.target.closest(".context-menu") ||
+    event.target.closest(".node") ||
+    event.target.closest(".edge-path, .edge-hitbox, .edge-label")
+  ) {
+    return;
+  }
+
+  closeContextMenu();
+  const rect = canvas.getBoundingClientRect();
+  state.drag = {
+    type: "canvas",
+    startX: event.clientX,
+    startY: event.clientY,
+    panX: state.pan.x,
+    panY: state.pan.y,
+    rect,
+  };
+  clearSelection();
+}
+
+function handlePointerMove(event) {
+  if (!state.drag) {
+    return;
+  }
+
+  if (state.drag.type === "node") {
+    const node = getNode(state.drag.id);
+    const point = worldPointFromEvent(event);
+    if (node) {
+      node.x = clamp(point.x - state.drag.offsetX, 10, 4800);
+      node.y = clamp(point.y - state.drag.offsetY, 10, 3400);
+      renderNodes();
+      renderEdges();
+      syncInspector();
+    }
+    return;
+  }
+
+  if (state.drag.type === "resize-node") {
+    const node = getNode(state.drag.id);
+    const point = worldPointFromEvent(event);
+    if (node) {
+      node.width = clamp(state.drag.startWidth + point.x - state.drag.startX, 96, 520);
+      node.height = clamp(state.drag.startHeight + point.y - state.drag.startY, 56, 360);
+      renderNodes();
+      renderEdges();
+      syncInspector();
+    }
+    return;
+  }
+
+  state.pan.x = state.drag.panX + event.clientX - state.drag.startX;
+  state.pan.y = state.drag.panY + event.clientY - state.drag.startY;
+  applyTransform();
+}
+
+function handlePointerUp() {
+  if (state.drag) {
+    persistActiveMap();
+  }
+
+  state.drag = null;
+}
+
+function updateSelectedNode(patch) {
+  if (state.readOnly) {
+    return;
+  }
+
+  const node = state.selectedNodeId ? getNode(state.selectedNodeId) : null;
+  if (!node) {
+    return;
+  }
+
+  Object.assign(node, patch);
+  render();
+  persistActiveMap();
+}
+
+function updateSelectedEdge(patch) {
+  if (state.readOnly) {
+    return;
+  }
+
+  const edge = state.selectedEdgeId ? getEdge(state.selectedEdgeId) : null;
+  if (!edge) {
+    return;
+  }
+
+  Object.assign(edge, patch);
+  render();
+  persistActiveMap();
+}
+
+function zoomAt(factor, clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const originX = clientX ?? rect.left + rect.width / 2;
+  const originY = clientY ?? rect.top + rect.height / 2;
+  const worldX = (originX - rect.left - state.pan.x) / state.scale;
+  const worldY = (originY - rect.top - state.pan.y) / state.scale;
+  const nextScale = clamp(state.scale * factor, 0.3, 2.4);
+
+  state.pan.x = originX - rect.left - worldX * nextScale;
+  state.pan.y = originY - rect.top - worldY * nextScale;
+  state.scale = nextScale;
+  applyTransform({ animate: true });
+}
+
+function arrange(direction) {
+  if (state.readOnly) {
+    return;
+  }
+
+  const root = state.nodes[0];
+  if (!root) {
+    return;
+  }
+
+  const groups = groupNodesByDepth(root.id);
+  const columnGap = 300;
+  const rowGap = 150;
+
+  groups.forEach((group, depth) => {
+    group.forEach((node, index) => {
+      if (direction === "vertical") {
+        node.x = 240 + index * 230 - (group.length - 1) * 115;
+        node.y = 130 + depth * 190;
+      } else {
+        node.x = 220 + depth * columnGap;
+        node.y = 180 + index * rowGap - (group.length - 1) * 75;
+      }
+    });
+  });
+
+  render();
+  persistActiveMap();
+}
+
+function groupNodesByDepth(rootId) {
+  const visited = new Set([rootId]);
+  const groups = [[getNode(rootId)]];
+  let frontier = [rootId];
+
+  while (frontier.length) {
+    const next = [];
+    frontier.forEach((id) => {
+      state.edges
+        .filter((edge) => edge.from === id || edge.to === id)
+        .forEach((edge) => {
+          const targetId = edge.from === id ? edge.to : edge.from;
+          if (!visited.has(targetId)) {
+            visited.add(targetId);
+            next.push(targetId);
+          }
+        });
+    });
+
+    if (next.length) {
+      groups.push(next.map(getNode).filter(Boolean));
+    }
+
+    frontier = next;
+  }
+
+  const remaining = state.nodes.filter((node) => !visited.has(node.id));
+  if (remaining.length) {
+    groups.push(remaining);
+  }
+
+  return groups;
+}
+
+function createMapSnapshot() {
+  return {
+    version: 1,
+    id: state.activeMapId,
+    name: state.activeMapTitle,
+    nodes: state.nodes.map((node) => ({ ...node })),
+    edges: state.edges.map((edge) => ({ ...edge })),
+    nextNodeId: state.nextNodeId,
+    nextEdgeId: state.nextEdgeId,
+    view: {
+      pan: { ...state.pan },
+      scale: state.scale,
+    },
+  };
+}
+
+function createMapId() {
+  return `map-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createStoredMapFromState(name = state.activeMapTitle) {
+  return {
+    ...createMapSnapshot(),
+    id: state.activeMapId || createMapId(),
+    name: name || t("maps.untitled"),
+  };
+}
+
+function createBlankMap(name) {
+  const mapName = name || `${t("maps.untitled")} ${state.maps.length + 1}`;
+  return {
+    version: 1,
+    id: createMapId(),
+    name: mapName,
+    nodes: [
+      {
+        id: "node-1",
+        x: 320,
+        y: 240,
+        type: "title",
+        text: mapName,
+        url: "",
+        color: "#dbeafe",
+        shape: "rounded",
+        width: 184,
+        height: 76,
+        fontSize: 18,
+        fontFamily: "system",
+      },
+    ],
+    edges: [],
+    nextNodeId: 2,
+    nextEdgeId: 1,
+    view: {
+      pan: { x: 80, y: 60 },
+      scale: 1,
+    },
+  };
+}
+
+function loadStoredMaps() {
+  const fallback = createStoredMapFromState(t("maps.defaultTitle"));
+
+  try {
+    const stored = JSON.parse(localStorage.getItem(MAP_STORAGE_KEY));
+    const maps = Array.isArray(stored?.maps) ? stored.maps.map(normalizeMap).filter(Boolean) : [];
+
+    if (maps.length) {
+      state.maps = maps;
+      const activeMap = maps.find((map) => map.id === stored.activeMapId) || maps[0];
+      applyMap(activeMap);
+      renderMapList();
+      return;
+    }
+  } catch (error) {
+    console.warn("无法读取本地脑图目录。", error);
+  }
+
+  state.maps = [normalizeMap(fallback)];
+  applyMap(state.maps[0]);
+  saveMapsToStorage();
+  renderMapList();
+}
+
+function applyMap(map) {
+  state.activeMapId = map.id;
+  state.activeMapTitle = map.name;
+  state.nodes = map.nodes.map((node, index) => normalizeNode(node, index)).filter(Boolean);
+  state.edges = map.edges.map((edge, index) => normalizeEdge(edge, index)).filter(Boolean);
+  state.nextNodeId = Number.isFinite(map.nextNodeId) ? map.nextNodeId : getNextNumericId(state.nodes, "node");
+  state.nextEdgeId = Number.isFinite(map.nextEdgeId) ? map.nextEdgeId : getNextNumericId(state.edges, "edge");
+  state.pan = {
+    x: finiteNumber(map.view?.pan?.x, 80),
+    y: finiteNumber(map.view?.pan?.y, 60),
+  };
+  state.scale = clamp(finiteNumber(map.view?.scale, 1), 0.3, 2.4);
+  state.selectedNodeId = state.nodes[0]?.id || null;
+  state.selectedEdgeId = null;
+  state.connectFromId = null;
+  mapTitleInput.value = state.activeMapTitle;
+}
+
+function persistActiveMap() {
+  if (state.readOnly || !state.maps.length) {
+    return;
+  }
+
+  const index = state.maps.findIndex((map) => map.id === state.activeMapId);
+  if (index === -1) {
+    return;
+  }
+
+  state.maps[index] = createStoredMapFromState(state.activeMapTitle);
+  saveMapsToStorage();
+  renderMapList();
+}
+
+function saveMapsToStorage() {
+  if (state.readOnly) {
+    return;
+  }
+
+  localStorage.setItem(
+    MAP_STORAGE_KEY,
+    JSON.stringify({
+      activeMapId: state.activeMapId,
+      maps: state.maps,
+    }),
+  );
+}
+
+function createNewMap() {
+  if (state.readOnly) {
+    return;
+  }
+
+  persistActiveMap();
+  const map = createBlankMap();
+  state.maps.push(map);
+  applyMap(map);
+  saveMapsToStorage();
+  render();
+  renderMapList();
+  mapTitleInput.focus();
+  mapTitleInput.select();
+}
+
+function switchMap(id) {
+  if (state.readOnly || id === state.activeMapId) {
+    return;
+  }
+
+  const map = state.maps.find((item) => item.id === id);
+  if (!map) {
+    return;
+  }
+
+  persistActiveMap();
+  applyMap(map);
+  saveMapsToStorage();
+  render();
+  renderMapList();
+}
+
+function renderMapList() {
+  if (!mapList) {
+    return;
+  }
+
+  const maps = state.readOnly
+    ? [createStoredMapFromState(state.activeMapTitle || t("maps.sharedTitle"))]
+    : state.maps;
+  mapList.replaceChildren();
+
+  maps.forEach((map) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `map-list-item${map.id === state.activeMapId ? " is-active" : ""}`;
+    button.disabled = state.readOnly;
+    button.dataset.id = map.id;
+
+    const title = document.createElement("strong");
+    title.textContent = map.name || t("maps.untitled");
+
+    const summary = document.createElement("span");
+    summary.textContent = `${t("maps.nodeCount", { count: map.nodes.length })} · ${t("maps.edgeCount", {
+      count: map.edges.length,
+    })}`;
+
+    button.append(title, summary);
+    button.addEventListener("click", () => switchMap(map.id));
+    mapList.append(button);
+  });
+}
+
+function encodeMapPayload(payload) {
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function decodeMapPayload(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function buildShareUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.set("view", "readonly");
+  url.hash = `map=${encodeMapPayload(createMapSnapshot())}`;
+  return url.toString();
+}
+
+async function copyShareUrl() {
+  const link = buildShareUrl();
+
+  try {
+    await navigator.clipboard.writeText(link);
+    flashShareButton(t("toolbar.shareCopied"));
+  } catch (error) {
+    window.prompt(t("prompt.copyReadonly"), link);
+    flashShareButton(t("toolbar.shareCreated"));
+  }
+}
+
+function flashShareButton(text) {
+  const defaultText = t("toolbar.share");
+  shareBtn.textContent = text;
+  window.setTimeout(() => {
+    shareBtn.textContent = defaultText;
+  }, 1400);
+}
+
+function loadSharedMapFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.slice(1));
+  const payload = hashParams.get("map");
+  let sharedLoaded = false;
+
+  if (payload) {
+    try {
+      hydrateMap(decodeMapPayload(payload));
+      sharedLoaded = true;
+    } catch (error) {
+      console.warn("无法读取分享链接中的脑图数据。", error);
+    }
+  }
+
+  state.readOnly = params.get("view") === "readonly" || params.get("readonly") === "1";
+
+  if (state.readOnly) {
+    state.selectedNodeId = null;
+    state.selectedEdgeId = null;
+    state.connectFromId = null;
+  }
+
+  setMode("select");
+  syncReadOnlyControls();
+  return sharedLoaded;
+}
+
+function hydrateMap(payload) {
+  if (!payload || !Array.isArray(payload.nodes) || !Array.isArray(payload.edges)) {
+    return;
+  }
+
+  const nodes = payload.nodes.map(normalizeNode).filter(Boolean);
+  if (!nodes.length) {
+    return;
+  }
+
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = payload.edges.map(normalizeEdge).filter((edge) => {
+    return edge && nodeIds.has(edge.from) && nodeIds.has(edge.to);
+  });
+
+  state.nodes = nodes;
+  state.edges = edges;
+  state.activeMapId = typeof payload.id === "string" && payload.id ? payload.id : "shared-map";
+  state.activeMapTitle = typeof payload.name === "string" && payload.name ? payload.name : t("maps.sharedTitle");
+  state.nextNodeId = Number.isFinite(payload.nextNodeId) ? payload.nextNodeId : getNextNumericId(nodes, "node");
+  state.nextEdgeId = Number.isFinite(payload.nextEdgeId) ? payload.nextEdgeId : getNextNumericId(edges, "edge");
+
+  if (payload.view) {
+    state.pan = {
+      x: finiteNumber(payload.view.pan?.x, state.pan.x),
+      y: finiteNumber(payload.view.pan?.y, state.pan.y),
+    };
+    state.scale = clamp(finiteNumber(payload.view.scale, state.scale), 0.3, 2.4);
+  }
+
+  mapTitleInput.value = state.activeMapTitle;
+}
+
+function normalizeMap(map, index = 0) {
+  if (!map || typeof map !== "object" || !Array.isArray(map.nodes) || !Array.isArray(map.edges)) {
+    return null;
+  }
+
+  const nodes = map.nodes.map(normalizeNode).filter(Boolean);
+  if (!nodes.length) {
+    return null;
+  }
+
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const edges = map.edges.map(normalizeEdge).filter((edge) => edge && nodeIds.has(edge.from) && nodeIds.has(edge.to));
+
+  return {
+    version: 1,
+    id: typeof map.id === "string" && map.id ? map.id : `map-${index + 1}`,
+    name: typeof map.name === "string" && map.name ? map.name : `${t("maps.untitled")} ${index + 1}`,
+    nodes,
+    edges,
+    nextNodeId: Number.isFinite(map.nextNodeId) ? map.nextNodeId : getNextNumericId(nodes, "node"),
+    nextEdgeId: Number.isFinite(map.nextEdgeId) ? map.nextEdgeId : getNextNumericId(edges, "edge"),
+    view: {
+      pan: {
+        x: finiteNumber(map.view?.pan?.x, 80),
+        y: finiteNumber(map.view?.pan?.y, 60),
+      },
+      scale: clamp(finiteNumber(map.view?.scale, 1), 0.3, 2.4),
+    },
+  };
+}
+
+function normalizeNode(node, index) {
+  if (!node || typeof node !== "object") {
+    return null;
+  }
+
+  const id = typeof node.id === "string" && node.id ? node.id : `node-${index + 1}`;
+  const type = allowedNodeTypes.has(node.type) ? node.type : "title";
+  const shape = allowedNodeShapes.has(node.shape) ? node.shape : "rounded";
+  const defaultDimensions = getDefaultNodeDimensions(shape);
+
+  return {
+    id,
+    x: clamp(finiteNumber(node.x, 180 + index * 40), 10, 4800),
+    y: clamp(finiteNumber(node.y, 180 + index * 40), 10, 3400),
+    type,
+    text: typeof node.text === "string" ? node.text : t("node.new"),
+    url: typeof node.url === "string" ? node.url : "",
+    color: isHexColor(node.color) ? node.color : "#dbeafe",
+    shape,
+    width: clamp(finiteNumber(node.width, defaultDimensions.width), 96, 520),
+    height: clamp(finiteNumber(node.height, defaultDimensions.height), 56, 360),
+    fontSize: clamp(finiteNumber(node.fontSize, type === "title" ? 18 : 14), 10, 48),
+    fontFamily: allowedFontFamilies.has(node.fontFamily) ? node.fontFamily : "system",
+  };
+}
+
+function normalizeEdge(edge, index) {
+  if (!edge || typeof edge !== "object") {
+    return null;
+  }
+
+  const shape = allowedEdgeShapes.has(edge.shape) ? edge.shape : "curved";
+  const arrow = allowedEdgeArrows.has(edge.arrow) ? edge.arrow : "forward";
+
+  return {
+    id: typeof edge.id === "string" && edge.id ? edge.id : `edge-${index + 1}`,
+    from: edge.from,
+    to: edge.to,
+    color: isHexColor(edge.color) ? edge.color : "#2563eb",
+    shape,
+    arrow,
+    label: typeof edge.label === "string" ? edge.label : "",
+  };
+}
+
+function finiteNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function isHexColor(value) {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
+function getNextNumericId(items, prefix) {
+  const maxId = items.reduce((max, item) => {
+    const match = String(item.id).match(new RegExp(`^${prefix}-(\\d+)$`));
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+
+  return maxId + 1;
+}
+
+nodesLayer.addEventListener("pointerdown", handleNodePointerDown);
+canvas.addEventListener("pointerdown", handleCanvasPointerDown);
+window.addEventListener("pointermove", handlePointerMove);
+window.addEventListener("pointerup", handlePointerUp);
+window.addEventListener("click", closeContextMenu);
+
+canvas.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  const factor = Math.exp(-event.deltaY * 0.001);
+  zoomAt(factor, event.clientX, event.clientY);
+});
+
+canvas.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
+  closeContextMenu();
+
+  if (state.readOnly) {
+    return;
+  }
+
+  const nodeElement = event.target.closest(".node");
+  const edgeElement = event.target.closest(".edge-path, .edge-hitbox, .edge-label");
+  const point = worldPointFromEvent(event);
+
+  if (nodeElement) {
+    const nodeId = nodeElement.dataset.id;
+    selectNode(nodeId);
+    openContextMenu(event, [
+      {
+        label: t("menu.connectFrom"),
+        action: () => {
+          state.connectFromId = nodeId;
+          setMode("connect");
+          render();
+        },
+      },
+      {
+        label: t("menu.copyChild"),
+        action: () => {
+          createNode({ x: point.x + 260, y: point.y + 20 }, { connectFromId: nodeId, text: t("node.child") });
+        },
+      },
+      {
+        label: t("menu.deleteNode"),
+        danger: true,
+        action: deleteSelected,
+      },
+    ]);
+    return;
+  }
+
+  if (edgeElement) {
+    const edgeId = edgeElement.dataset.id;
+    selectEdge(edgeId);
+    openContextMenu(event, [
+      {
+        label: t("menu.reverseArrow"),
+        action: () => {
+          const edge = getEdge(edgeId);
+          if (edge) {
+            [edge.from, edge.to] = [edge.to, edge.from];
+            edge.arrow = edge.arrow === "backward" ? "forward" : edge.arrow;
+            selectEdge(edge.id);
+          }
+        },
+      },
+      {
+        label: t("menu.deleteEdge"),
+        danger: true,
+        action: deleteSelected,
+      },
+    ]);
+    return;
+  }
+
+  openContextMenu(event, [
+    {
+      label: t("menu.createHere"),
+      action: () => createNode(point),
+    },
+    {
+      label: t("menu.createLinked"),
+      action: () =>
+        createNode(point, {
+          connectFromId: state.selectedNodeId,
+          text: t("node.branch"),
+        }),
+    },
+    {
+      label: t("menu.clearSelection"),
+      action: clearSelection,
+    },
+  ]);
+});
+
+edgesLayer.addEventListener("click", (event) => {
+  const path = event.target.closest(".edge-path, .edge-hitbox, .edge-label");
+  if (!path) {
+    return;
+  }
+
+  event.stopPropagation();
+  selectEdge(path.dataset.id);
+});
+
+nodesLayer.addEventListener("dblclick", (event) => {
+  if (state.readOnly) {
+    return;
+  }
+
+  const nodeElement = event.target.closest(".node");
+  if (!nodeElement) {
+    return;
+  }
+
+  selectNode(nodeElement.dataset.id);
+  nodeText.focus();
+  nodeText.select();
+});
+
+addNodeBtn.addEventListener("click", () => {
+  const center = viewportCenterAsWorldPoint();
+  createNode(center, { connectFromId: state.selectedNodeId });
+});
+
+connectBtn.addEventListener("click", () => {
+  state.connectFromId = state.selectedNodeId;
+  setMode(state.mode === "connect" ? "select" : "connect");
+  render();
+});
+
+deleteBtn.addEventListener("click", deleteSelected);
+zoomInBtn.addEventListener("click", () => zoomAt(1.15));
+zoomOutBtn.addEventListener("click", () => zoomAt(0.85));
+resetViewBtn.addEventListener("click", () => {
+  state.scale = 1;
+  state.pan = { x: 80, y: 60 };
+  applyTransform({ animate: true });
+});
+layoutHorizontalBtn.addEventListener("click", () => arrange("horizontal"));
+layoutVerticalBtn.addEventListener("click", () => arrange("vertical"));
+
+nodeType.addEventListener("change", () => updateSelectedNode({ type: nodeType.value }));
+nodeText.addEventListener("input", () => updateSelectedNode({ text: nodeText.value }));
+nodeUrl.addEventListener("input", () => updateSelectedNode({ url: nodeUrl.value }));
+nodeShape.addEventListener("change", () => updateSelectedNode({ shape: nodeShape.value }));
+nodeColor.addEventListener("input", () => updateSelectedNode({ color: nodeColor.value }));
+nodeFontSize.addEventListener("input", () => updateSelectedNode({ fontSize: finiteNumber(nodeFontSize.value, 18) }));
+nodeFontFamily.addEventListener("change", () => updateSelectedNode({ fontFamily: nodeFontFamily.value }));
+edgeShape.addEventListener("change", () => updateSelectedEdge({ shape: edgeShape.value }));
+edgeArrow.addEventListener("change", () => updateSelectedEdge({ arrow: edgeArrow.value }));
+edgeColor.addEventListener("input", () => updateSelectedEdge({ color: edgeColor.value }));
+edgeLabel.addEventListener("input", () => updateSelectedEdge({ label: edgeLabel.value }));
+shareBtn.addEventListener("click", copyShareUrl);
+languageBtn.addEventListener("click", () => {
+  state.locale = state.locale === "zh" ? "en" : "zh";
+  localStorage.setItem(LOCALE_STORAGE_KEY, state.locale);
+  applyLocale();
+  render();
+});
+newMapBtn.addEventListener("click", createNewMap);
+mapTitleInput.addEventListener("input", () => {
+  state.activeMapTitle = mapTitleInput.value.trim() || t("maps.untitled");
+  persistActiveMap();
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Delete" || event.key === "Backspace") {
+    const editingText = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName);
+    if (!editingText) {
+      deleteSelected();
+    }
+  }
+
+  if (event.key === "Escape") {
+    clearSelection();
+    closeContextMenu();
+  }
+});
+
+const sharedLoaded = loadSharedMapFromUrl();
+if (!sharedLoaded && !state.readOnly) {
+  loadStoredMaps();
+}
+applyLocale();
+applyTransform();
+render();

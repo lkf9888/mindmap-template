@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>思维脑图绘制模板</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">M</span>
+          <div>
+            <strong>MindMap Studio</strong>
+            <span data-i18n="app.subtitle">简易脑图模板</span>
+          </div>
+        </div>
+
+        <div class="toolbar" aria-label="脑图工具栏">
+          <button id="addNodeBtn" type="button" data-i18n="toolbar.addNode">新建节点</button>
+          <button id="connectBtn" type="button" data-i18n="toolbar.connect">连接</button>
+          <button id="deleteBtn" type="button" data-i18n="toolbar.delete">删除</button>
+          <span class="toolbar-separator"></span>
+          <button id="zoomOutBtn" type="button" data-i18n="toolbar.zoomOut">缩小</button>
+          <button id="zoomInBtn" type="button" data-i18n="toolbar.zoomIn">放大</button>
+          <button id="resetViewBtn" type="button" data-i18n="toolbar.reset">归位</button>
+          <span class="toolbar-separator"></span>
+          <button id="layoutHorizontalBtn" type="button" data-i18n="toolbar.horizontal">横向排布</button>
+          <button id="layoutVerticalBtn" type="button" data-i18n="toolbar.vertical">纵向排布</button>
+          <span class="toolbar-separator"></span>
+          <button id="shareBtn" class="primary" type="button" data-i18n="toolbar.share">分享只读链接</button>
+          <button id="languageBtn" type="button" aria-pressed="false">EN</button>
+          <span id="readonlyBadge" class="readonly-badge" hidden data-i18n="toolbar.readonlyBadge">只读查看</span>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="map-directory" aria-label="脑图目录">
+          <div class="directory-header">
+            <h2 data-i18n="maps.title">脑图目录</h2>
+            <button id="newMapBtn" type="button" data-i18n="maps.new">新建</button>
+          </div>
+          <label>
+            <span data-i18n="maps.currentName">当前脑图名称</span>
+            <input id="mapTitleInput" type="text" />
+          </label>
+          <div id="mapList" class="map-list" aria-label="脑图列表"></div>
+        </aside>
+
+        <section class="canvas-panel" aria-label="脑图画布">
+          <div id="canvas" class="canvas" tabindex="0">
+            <div id="world" class="world">
+              <svg id="edgesLayer" class="edges-layer" width="5000" height="3600" viewBox="0 0 5000 3600"></svg>
+              <div id="nodesLayer" class="nodes-layer"></div>
+            </div>
+            <div id="contextMenu" class="context-menu" role="menu" hidden></div>
+            <div class="canvas-help" data-i18n="canvas.helpEdit">
+              右键创建/删除 · 滚轮缩放 · 拖动画布平移 · 拖动节点移动
+            </div>
+          </div>
+        </section>
+
+        <aside class="inspector" aria-label="属性面板">
+          <div class="panel-section">
+            <h2 data-i18n="inspector.selection">选择内容</h2>
+            <p id="selectionHint" class="muted" data-i18n="inspector.selectionHint">选择一个节点或连接线后，在这里编辑属性。</p>
+            <p id="readonlyNotice" class="muted readonly-notice" hidden data-i18n="inspector.readonlyNotice">当前是只读分享视图，可以查看、缩放和平移，不能编辑内容。</p>
+          </div>
+
+          <form id="nodeForm" class="panel-section" hidden>
+            <h2 data-i18n="node.title">节点属性</h2>
+            <label>
+              <span data-i18n="node.type">类型</span>
+              <select id="nodeType">
+                <option value="title" data-i18n="node.typeTitle">标题</option>
+                <option value="paragraph" data-i18n="node.typeParagraph">文字段落</option>
+                <option value="link" data-i18n="node.typeLink">超链接</option>
+              </select>
+            </label>
+            <label>
+              <span data-i18n="node.content">内容</span>
+              <textarea id="nodeText" rows="4"></textarea>
+            </label>
+            <label id="nodeUrlLabel" hidden>
+              <span data-i18n="node.url">链接地址</span>
+              <input id="nodeUrl" type="url" placeholder="https://example.com" />
+            </label>
+            <label>
+              <span data-i18n="node.shape">形状</span>
+              <select id="nodeShape">
+                <option value="rounded" data-i18n="node.shapeRounded">圆角矩形</option>
+                <option value="pill" data-i18n="node.shapePill">胶囊</option>
+                <option value="circle" data-i18n="node.shapeCircle">圆形</option>
+                <option value="diamond" data-i18n="node.shapeDiamond">菱形</option>
+                <option value="note" data-i18n="node.shapeNote">便签</option>
+              </select>
+            </label>
+            <label>
+              <span data-i18n="node.color">颜色</span>
+              <input id="nodeColor" type="color" />
+            </label>
+            <label>
+              <span data-i18n="node.fontSize">文字大小</span>
+              <input id="nodeFontSize" type="number" min="10" max="48" step="1" />
+            </label>
+            <label>
+              <span data-i18n="node.fontFamily">字体</span>
+              <select id="nodeFontFamily">
+                <option value="system" data-i18n="node.fontSystem">系统默认</option>
+                <option value="serif" data-i18n="node.fontSerif">衬线字体</option>
+                <option value="mono" data-i18n="node.fontMono">等宽字体</option>
+                <option value="rounded" data-i18n="node.fontRounded">圆润字体</option>
+              </select>
+            </label>
+          </form>
+
+          <form id="edgeForm" class="panel-section" hidden>
+            <h2 data-i18n="edge.title">连接线属性</h2>
+            <label>
+              <span data-i18n="edge.label">文字注释</span>
+              <textarea id="edgeLabel" rows="3" placeholder="例如：依赖、参考、下一步" data-i18n-placeholder="edge.labelPlaceholder"></textarea>
+            </label>
+            <label>
+              <span data-i18n="edge.shape">线条形状</span>
+              <select id="edgeShape">
+                <option value="curved" data-i18n="edge.shapeCurved">曲线</option>
+                <option value="straight" data-i18n="edge.shapeStraight">直线</option>
+                <option value="elbow" data-i18n="edge.shapeElbow">折线</option>
+              </select>
+            </label>
+            <label>
+              <span data-i18n="edge.arrow">箭头方向</span>
+              <select id="edgeArrow">
+                <option value="forward" data-i18n="edge.arrowForward">正向</option>
+                <option value="backward" data-i18n="edge.arrowBackward">反向</option>
+                <option value="both" data-i18n="edge.arrowBoth">双向</option>
+                <option value="none" data-i18n="edge.arrowNone">无箭头</option>
+              </select>
+            </label>
+            <label>
+              <span data-i18n="edge.color">颜色</span>
+              <input id="edgeColor" type="color" />
+            </label>
+          </form>
+
+          <div class="panel-section">
+            <h2 data-i18n="view.title">视图</h2>
+            <div class="status-grid">
+              <span data-i18n="view.zoom">缩放</span>
+              <strong id="zoomLabel">100%</strong>
+              <span data-i18n="view.mode">模式</span>
+              <strong id="modeLabel">选择</strong>
+            </div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
