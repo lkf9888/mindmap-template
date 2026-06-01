@@ -271,6 +271,40 @@ button.primary {
   margin-top: 10px;
 }
 
+.color-palette-field {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: #344054;
+  font-size: 13px;
+}
+
+.color-palette {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.color-swatch {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  border-radius: 7px;
+  padding: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.48);
+}
+
+.color-swatch:hover {
+  border-color: #64748b;
+}
+
+.color-swatch.is-selected {
+  border-color: var(--primary);
+  box-shadow:
+    0 0 0 3px rgba(37, 99, 235, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.58);
+}
+
 .map-list-item {
   display: grid;
   gap: 3px;
@@ -347,6 +381,11 @@ button.primary {
 }
 
 .edges-layer {
+  inset: auto;
+  left: -100000px;
+  top: -100000px;
+  width: 200000px;
+  height: 200000px;
   overflow: visible;
 }
 
@@ -415,6 +454,7 @@ button.primary {
   pointer-events: auto;
   cursor: move;
   user-select: none;
+  overflow: visible;
 }
 
 .node-content {
@@ -503,6 +543,32 @@ button.primary {
 
 .node a:hover {
   text-decoration: underline;
+}
+
+.node-link-button {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  min-height: 26px;
+  border: 1px solid rgba(37, 99, 235, 0.34);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #1d4ed8;
+  padding: 0 9px;
+  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.14);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.node-link-button:hover {
+  border-color: var(--primary);
+  background: #eef4ff;
+}
+
+.node--diamond .node-link-button {
+  transform: rotate(-45deg);
 }
 
 .node-resize-handle {

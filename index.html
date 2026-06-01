@@ -81,7 +81,7 @@
         <section class="canvas-panel" aria-label="脑图画布">
           <div id="canvas" class="canvas" tabindex="0">
             <div id="world" class="world">
-              <svg id="edgesLayer" class="edges-layer" width="5000" height="3600" viewBox="0 0 5000 3600"></svg>
+              <svg id="edgesLayer" class="edges-layer" width="200000" height="200000" viewBox="-100000 -100000 200000 200000"></svg>
               <div id="nodesLayer" class="nodes-layer"></div>
             </div>
             <div id="contextMenu" class="context-menu" role="menu" hidden></div>
@@ -130,6 +130,10 @@
               <span data-i18n="node.color">颜色</span>
               <input id="nodeColor" type="color" />
             </label>
+            <div class="color-palette-field">
+              <span data-i18n="node.palette">快速颜色</span>
+              <div id="nodeColorPalette" class="color-palette" aria-label="节点颜色"></div>
+            </div>
             <label>
               <span data-i18n="node.fontSize">文字大小</span>
               <input id="nodeFontSize" type="number" min="10" max="48" step="1" />

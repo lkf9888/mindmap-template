@@ -40,6 +40,7 @@ const nodeUrl = document.querySelector("#nodeUrl");
 const nodeUrlLabel = document.querySelector("#nodeUrlLabel");
 const nodeShape = document.querySelector("#nodeShape");
 const nodeColor = document.querySelector("#nodeColor");
+const nodeColorPalette = document.querySelector("#nodeColorPalette");
 const nodeFontSize = document.querySelector("#nodeFontSize");
 const nodeFontFamily = document.querySelector("#nodeFontFamily");
 const edgeLabel = document.querySelector("#edgeLabel");
@@ -59,6 +60,32 @@ const LOCALE_STORAGE_KEY = "mindmap-template.locale";
 const AUTH_SESSION_KEY = "mindmap-template.auth.session.v1";
 const AUTH_EMAIL = "lkf9888@gmail.com";
 const AUTH_PASSWORD_SHA256 = "5218edadac6238094722ec741f21193b05903f142a82124e8fb3044374a12429";
+const nodeColorOptions = [
+  "#dbeafe",
+  "#bfdbfe",
+  "#e0f2fe",
+  "#cffafe",
+  "#ccfbf1",
+  "#dcfce7",
+  "#d9f99d",
+  "#fef9c3",
+  "#fef3c7",
+  "#fed7aa",
+  "#fee2e2",
+  "#fecaca",
+  "#fce7f3",
+  "#fbcfe8",
+  "#fae8ff",
+  "#e9d5ff",
+  "#ede9fe",
+  "#e0e7ff",
+  "#f1f5f9",
+  "#e2e8f0",
+  "#d1fae5",
+  "#fde68a",
+  "#fca5a5",
+  "#c4b5fd",
+];
 const fontFamilies = {
   system: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif',
   serif: 'Georgia, "Times New Roman", "Noto Serif SC", serif',
@@ -238,6 +265,7 @@ const i18n = {
     "node.shapeDiamond": "菱形",
     "node.shapeNote": "便签",
     "node.color": "颜色",
+    "node.palette": "快速颜色",
     "node.fontSize": "文字大小",
     "node.fontFamily": "字体",
     "node.fontSystem": "系统默认",
@@ -250,6 +278,7 @@ const i18n = {
     "node.untitledTitle": "未命名标题",
     "node.paragraphFallback": "文字段落",
     "node.linkFallback": "超链接",
+    "node.visitLink": "访问 Link",
     "edge.title": "连接线属性",
     "edge.label": "文字注释",
     "edge.labelPlaceholder": "例如：依赖、参考、下一步",
@@ -270,6 +299,7 @@ const i18n = {
     "mode.connect": "连接",
     "mode.readonly": "只读",
     "menu.connectFrom": "从此节点开始连线",
+    "menu.copyNode": "复制本节点",
     "menu.copyChild": "复制一个子节点",
     "menu.deleteNode": "删除节点",
     "menu.reverseArrow": "反转箭头",
@@ -340,6 +370,7 @@ const i18n = {
     "node.shapeDiamond": "Diamond",
     "node.shapeNote": "Note",
     "node.color": "Color",
+    "node.palette": "Quick colors",
     "node.fontSize": "Font size",
     "node.fontFamily": "Font",
     "node.fontSystem": "System",
@@ -352,6 +383,7 @@ const i18n = {
     "node.untitledTitle": "Untitled title",
     "node.paragraphFallback": "Paragraph",
     "node.linkFallback": "Link",
+    "node.visitLink": "Open link",
     "edge.title": "Link properties",
     "edge.label": "Text note",
     "edge.labelPlaceholder": "Example: depends on, reference, next step",
@@ -372,6 +404,7 @@ const i18n = {
     "mode.connect": "Connect",
     "mode.readonly": "Read only",
     "menu.connectFrom": "Start link here",
+    "menu.copyNode": "Duplicate this node",
     "menu.copyChild": "Create child copy",
     "menu.deleteNode": "Delete node",
     "menu.reverseArrow": "Reverse arrow",
@@ -499,6 +532,9 @@ function applyLocale() {
   });
 
   languageBtn.textContent = state.locale === "zh" ? "EN" : "中文";
+  nodesLayer.querySelectorAll(".node-link-button").forEach((button) => {
+    button.textContent = t("node.visitLink");
+  });
   languageBtn.setAttribute("aria-pressed", String(state.locale === "en"));
   setMode(state.mode === "connect" ? "connect" : "select");
   syncReadOnlyControls();
@@ -583,8 +619,8 @@ function createNode(point, options = {}) {
 
   const newNode = {
     id: `node-${state.nextNodeId++}`,
-    x: clamp(point.x - 92, 10, 4800),
-    y: clamp(point.y - 38, 10, 3400),
+    x: finiteNumber(point.x, 0) - 92,
+    y: finiteNumber(point.y, 0) - 38,
     type: options.type || "title",
     text: options.text || t("node.new"),
     url: "",
@@ -636,6 +672,29 @@ function createEdge(from, to) {
   selectEdge(edge.id);
   persistActiveMap();
   return edge;
+}
+
+function duplicateNode(id, offset = { x: 42, y: 42 }) {
+  if (state.readOnly) {
+    return null;
+  }
+
+  const source = getNode(id);
+  if (!source) {
+    return null;
+  }
+
+  const duplicate = {
+    ...source,
+    id: `node-${state.nextNodeId++}`,
+    x: finiteNumber(source.x, 0) + offset.x,
+    y: finiteNumber(source.y, 0) + offset.y,
+  };
+
+  state.nodes.push(duplicate);
+  selectNode(duplicate.id);
+  persistActiveMap();
+  return duplicate;
 }
 
 function deleteSelected() {
@@ -708,6 +767,19 @@ function renderNodes() {
     }
 
     element.append(content);
+
+    if (node.type === "link" && node.url) {
+      const visitButton = document.createElement("button");
+      visitButton.type = "button";
+      visitButton.className = "node-link-button";
+      visitButton.textContent = t("node.visitLink");
+      visitButton.addEventListener("pointerdown", (event) => event.stopPropagation());
+      visitButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        window.open(node.url, "_blank", "noopener,noreferrer");
+      });
+      element.append(visitButton);
+    }
 
     if (!state.readOnly) {
       const resizeHandle = document.createElement("span");
@@ -980,6 +1052,7 @@ function syncInspector() {
     nodeUrlLabel.hidden = node.type !== "link";
     nodeShape.value = node.shape;
     nodeColor.value = node.color;
+    syncColorPalette(node.color);
     nodeFontSize.value = getNodeFontSize(node);
     nodeFontFamily.value = allowedFontFamilies.has(node.fontFamily) ? node.fontFamily : "system";
   }
@@ -1003,6 +1076,9 @@ function syncReadOnlyControls() {
   mapTitleInput.disabled = state.readOnly;
   importBackupInput.disabled = state.readOnly;
   document.querySelector(".file-import-button")?.classList.toggle("is-disabled", state.readOnly);
+  nodeColorPalette.querySelectorAll("button").forEach((button) => {
+    button.disabled = state.readOnly;
+  });
 
   [nodeForm, edgeForm].forEach((form) => {
     form.querySelectorAll("input, select, textarea").forEach((control) => {
@@ -1012,6 +1088,32 @@ function syncReadOnlyControls() {
 
   readonlyBadge.hidden = !state.readOnly;
   canvasHelp.textContent = state.readOnly ? t("canvas.helpReadonly") : t("canvas.helpEdit");
+}
+
+function renderColorPalette() {
+  nodeColorPalette.replaceChildren();
+
+  nodeColorOptions.forEach((color) => {
+    const swatch = document.createElement("button");
+    swatch.type = "button";
+    swatch.className = "color-swatch";
+    swatch.dataset.color = color;
+    swatch.style.background = color;
+    swatch.title = color;
+    swatch.setAttribute("aria-label", color);
+    swatch.addEventListener("click", () => {
+      nodeColor.value = color;
+      updateSelectedNode({ color });
+      syncColorPalette(color);
+    });
+    nodeColorPalette.append(swatch);
+  });
+}
+
+function syncColorPalette(selectedColor) {
+  nodeColorPalette.querySelectorAll(".color-swatch").forEach((swatch) => {
+    swatch.classList.toggle("is-selected", swatch.dataset.color?.toLowerCase() === selectedColor?.toLowerCase());
+  });
 }
 
 function openContextMenu(event, items) {
@@ -1056,6 +1158,10 @@ function handleNodePointerDown(event) {
 
   if (state.readOnly) {
     selectNode(node.id);
+    return;
+  }
+
+  if (event.target.closest(".node-link-button")) {
     return;
   }
 
@@ -1130,8 +1236,8 @@ function handlePointerMove(event) {
     const node = getNode(state.drag.id);
     const point = worldPointFromEvent(event);
     if (node) {
-      node.x = clamp(point.x - state.drag.offsetX, 10, 4800);
-      node.y = clamp(point.y - state.drag.offsetY, 10, 3400);
+      node.x = point.x - state.drag.offsetX;
+      node.y = point.y - state.drag.offsetY;
       renderNodes();
       renderEdges();
       syncInspector();
@@ -1857,8 +1963,8 @@ function normalizeNode(node, index) {
   return {
     ...node,
     id,
-    x: clamp(finiteNumber(node.x, 180 + index * 40), 10, 4800),
-    y: clamp(finiteNumber(node.y, 180 + index * 40), 10, 3400),
+    x: finiteNumber(node.x, 180 + index * 40),
+    y: finiteNumber(node.y, 180 + index * 40),
     type,
     text: typeof node.text === "string" ? node.text : t("node.new"),
     url: typeof node.url === "string" ? node.url : "",
@@ -1915,6 +2021,7 @@ function initializeApp() {
   }
 
   appInitialized = true;
+  renderColorPalette();
   const sharedLoaded = loadSharedMapFromUrl();
   if (!sharedLoaded && !state.readOnly) {
     loadStoredMaps();
@@ -1959,6 +2066,10 @@ canvas.addEventListener("contextmenu", (event) => {
           setMode("connect");
           render();
         },
+      },
+      {
+        label: t("menu.copyNode"),
+        action: () => duplicateNode(nodeId),
       },
       {
         label: t("menu.copyChild"),
@@ -2071,6 +2182,7 @@ nodeText.addEventListener("input", () => updateSelectedNode({ text: nodeText.val
 nodeUrl.addEventListener("input", () => updateSelectedNode({ url: nodeUrl.value }));
 nodeShape.addEventListener("change", () => updateSelectedNode({ shape: nodeShape.value }));
 nodeColor.addEventListener("input", () => updateSelectedNode({ color: nodeColor.value }));
+nodeColor.addEventListener("change", () => syncColorPalette(nodeColor.value));
 nodeFontSize.addEventListener("input", () => updateSelectedNode({ fontSize: finiteNumber(nodeFontSize.value, 18) }));
 nodeFontFamily.addEventListener("change", () => updateSelectedNode({ fontFamily: nodeFontFamily.value }));
 edgeShape.addEventListener("change", () => updateSelectedEdge({ shape: edgeShape.value }));
