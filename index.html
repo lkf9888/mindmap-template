@@ -166,6 +166,13 @@
               </select>
             </label>
             <label>
+              <span data-i18n="edge.lineStyle">线条样式</span>
+              <select id="edgeLineStyle">
+                <option value="solid" data-i18n="edge.lineSolid">实线</option>
+                <option value="dashed" data-i18n="edge.lineDashed">虚线</option>
+              </select>
+            </label>
+            <label>
               <span data-i18n="edge.arrow">箭头方向</span>
               <select id="edgeArrow">
                 <option value="forward" data-i18n="edge.arrowForward">正向</option>
@@ -191,6 +198,24 @@
           </div>
         </aside>
       </main>
+    </div>
+
+    <div id="noteEditor" class="note-editor-backdrop" hidden>
+      <form id="noteForm" class="note-editor-card">
+        <div class="note-editor-header">
+          <h2 data-i18n="note.editorTitle">编辑备注</h2>
+          <button id="noteCloseBtn" type="button" aria-label="关闭" data-i18n-aria-label="common.close">×</button>
+        </div>
+        <label>
+          <span data-i18n="note.content">备注内容</span>
+          <textarea id="noteTextArea" rows="10" data-i18n-placeholder="note.placeholder" placeholder="输入详细备注，可换行记录更多信息。"></textarea>
+        </label>
+        <p class="muted" data-i18n="note.emptyHint">保存空内容会删除本节点备注。</p>
+        <div class="note-editor-actions">
+          <button id="noteCancelBtn" type="button" data-i18n="common.cancel">取消</button>
+          <button class="primary" type="submit" data-i18n="note.save">保存备注</button>
+        </div>
+      </form>
     </div>
 
     <script src="./app.js"></script>

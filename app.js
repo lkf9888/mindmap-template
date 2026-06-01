@@ -46,11 +46,17 @@ const nodeFontSize = document.querySelector("#nodeFontSize");
 const nodeFontFamily = document.querySelector("#nodeFontFamily");
 const edgeLabel = document.querySelector("#edgeLabel");
 const edgeShape = document.querySelector("#edgeShape");
+const edgeLineStyle = document.querySelector("#edgeLineStyle");
 const edgeArrow = document.querySelector("#edgeArrow");
 const edgeColor = document.querySelector("#edgeColor");
 const zoomLabel = document.querySelector("#zoomLabel");
 const modeLabel = document.querySelector("#modeLabel");
 const canvasHelp = document.querySelector(".canvas-help");
+const noteEditor = document.querySelector("#noteEditor");
+const noteForm = document.querySelector("#noteForm");
+const noteTextArea = document.querySelector("#noteTextArea");
+const noteCloseBtn = document.querySelector("#noteCloseBtn");
+const noteCancelBtn = document.querySelector("#noteCancelBtn");
 
 const MAP_STORAGE_KEY = "mindmap-template.maps.v1";
 const MAP_BACKUP_STORAGE_KEY = "mindmap-template.maps.backups.v1";
@@ -199,12 +205,14 @@ const state = {
   maps: [],
   activeMapId: "map-default",
   activeMapTitle: "项目计划",
+  editingNoteId: null,
   locale: getStoredLocale(),
 };
 
 const allowedNodeTypes = new Set(["title", "paragraph", "link"]);
 const allowedNodeShapes = new Set(["rounded", "pill", "circle", "diamond", "note"]);
 const allowedEdgeShapes = new Set(["curved", "straight", "elbow"]);
+const allowedEdgeLineStyles = new Set(["solid", "dashed"]);
 const allowedEdgeArrows = new Set(["forward", "backward", "both", "none"]);
 const allowedFontFamilies = new Set(Object.keys(fontFamilies));
 
@@ -286,6 +294,7 @@ const i18n = {
     "node.linkFallback": "超链接",
     "node.visitLink": "访问 Link",
     "node.noteTitle": "备注",
+    "node.closeNote": "关闭备注",
     "edge.title": "连接线属性",
     "edge.label": "文字注释",
     "edge.labelPlaceholder": "例如：依赖、参考、下一步",
@@ -293,6 +302,9 @@ const i18n = {
     "edge.shapeCurved": "曲线",
     "edge.shapeStraight": "直线",
     "edge.shapeElbow": "折线",
+    "edge.lineStyle": "线条样式",
+    "edge.lineSolid": "实线",
+    "edge.lineDashed": "虚线",
     "edge.arrow": "箭头方向",
     "edge.arrowForward": "正向",
     "edge.arrowBackward": "反向",
@@ -317,6 +329,13 @@ const i18n = {
     "menu.clearSelection": "清除选择",
     "prompt.copyReadonly": "复制这个只读链接",
     "prompt.nodeNote": "输入本节点备注内容，留空会删除备注：",
+    "note.editorTitle": "编辑备注",
+    "note.content": "备注内容",
+    "note.placeholder": "输入详细备注，可换行记录更多信息。",
+    "note.emptyHint": "保存空内容会删除本节点备注。",
+    "note.save": "保存备注",
+    "common.cancel": "取消",
+    "common.close": "关闭",
     "maps.dataStatusUndone": "已撤回上一步操作。",
   },
   en: {
@@ -396,6 +415,7 @@ const i18n = {
     "node.linkFallback": "Link",
     "node.visitLink": "Open link",
     "node.noteTitle": "Note",
+    "node.closeNote": "Close note",
     "edge.title": "Link properties",
     "edge.label": "Text note",
     "edge.labelPlaceholder": "Example: depends on, reference, next step",
@@ -403,6 +423,9 @@ const i18n = {
     "edge.shapeCurved": "Curve",
     "edge.shapeStraight": "Straight",
     "edge.shapeElbow": "Elbow",
+    "edge.lineStyle": "Line style",
+    "edge.lineSolid": "Solid",
+    "edge.lineDashed": "Dashed",
     "edge.arrow": "Arrow direction",
     "edge.arrowForward": "Forward",
     "edge.arrowBackward": "Backward",
@@ -427,6 +450,13 @@ const i18n = {
     "menu.clearSelection": "Clear selection",
     "prompt.copyReadonly": "Copy this read-only link",
     "prompt.nodeNote": "Enter this node note. Leave blank to remove it:",
+    "note.editorTitle": "Edit note",
+    "note.content": "Note content",
+    "note.placeholder": "Enter detailed notes. Line breaks are supported.",
+    "note.emptyHint": "Saving empty content removes this node note.",
+    "note.save": "Save note",
+    "common.cancel": "Cancel",
+    "common.close": "Close",
     "maps.dataStatusUndone": "Undid the last action.",
   },
 };
@@ -625,6 +655,10 @@ function applyLocale() {
     element.setAttribute("placeholder", t(element.dataset.i18nPlaceholder));
   });
 
+  document.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
+    element.setAttribute("aria-label", t(element.dataset.i18nAriaLabel));
+  });
+
   languageBtn.textContent = state.locale === "zh" ? "EN" : "中文";
   nodesLayer.querySelectorAll(".node-link-button").forEach((button) => {
     button.textContent = t("node.visitLink");
@@ -765,7 +799,8 @@ function createEdge(from, to, options = {}) {
     from,
     to,
     color: "#2563eb",
-    shape: "curved",
+    shape: "straight",
+    lineStyle: "solid",
     arrow: "forward",
     label: "",
   };
@@ -811,19 +846,60 @@ function editNodeNote(id) {
     return;
   }
 
-  const note = window.prompt(t("prompt.nodeNote"), node.note || "");
-  if (note === null) {
+  state.editingNoteId = id;
+  noteTextArea.value = node.note || "";
+  noteEditor.hidden = false;
+  window.setTimeout(() => noteTextArea.focus(), 0);
+}
+
+function closeNoteEditor() {
+  state.editingNoteId = null;
+  noteTextArea.value = "";
+  noteEditor.hidden = true;
+}
+
+function saveNoteEditor(event) {
+  event.preventDefault();
+
+  if (state.readOnly) {
+    closeNoteEditor();
+    return;
+  }
+
+  const node = getNode(state.editingNoteId);
+  if (!node) {
+    closeNoteEditor();
+    return;
+  }
+
+  const trimmedNote = noteTextArea.value.trim();
+  if (trimmedNote === (node.note || "")) {
+    closeNoteEditor();
     return;
   }
 
   pushUndo("edit-note");
-  const trimmedNote = note.trim();
   node.note = trimmedNote;
   node.noteOpen = Boolean(trimmedNote);
-  node.noteWidth = finiteNumber(node.noteWidth, 220);
-  node.noteHeight = finiteNumber(node.noteHeight, 92);
+  node.noteWidth = finiteNumber(node.noteWidth, 280);
+  node.noteHeight = finiteNumber(node.noteHeight, 130);
   render();
   persistActiveMap();
+  closeNoteEditor();
+}
+
+function setNodeNoteOpen(id, isOpen, options = {}) {
+  const node = getNode(id);
+  if (!node?.note) {
+    return false;
+  }
+
+  node.noteOpen = Boolean(isOpen);
+  render();
+  if (!state.readOnly && options.persist !== false) {
+    persistActiveMap();
+  }
+  return true;
 }
 
 function toggleNodeNote(id, options = {}) {
@@ -832,12 +908,7 @@ function toggleNodeNote(id, options = {}) {
     return false;
   }
 
-  node.noteOpen = !node.noteOpen;
-  render();
-  if (!state.readOnly && options.persist !== false) {
-    persistActiveMap();
-  }
-  return true;
+  return setNodeNoteOpen(id, !node.noteOpen, options);
 }
 
 function deleteSelected() {
@@ -929,28 +1000,50 @@ function renderNodes() {
     }
 
     if (node.note) {
-      const noteButton = document.createElement("span");
-      noteButton.className = "node-note-indicator";
+      const noteButton = document.createElement("button");
+      noteButton.type = "button";
+      noteButton.className = "node-note-toggle";
       noteButton.textContent = t("node.noteTitle");
       noteButton.title = t("node.noteTitle");
+      noteButton.addEventListener("pointerdown", (event) => event.stopPropagation());
+      noteButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggleNodeNote(node.id);
+      });
       element.append(noteButton);
 
       if (node.noteOpen) {
         const noteBox = document.createElement("section");
         noteBox.className = "node-note";
-        noteBox.style.width = `${clamp(finiteNumber(node.noteWidth, 220), 160, 520)}px`;
-        noteBox.style.height = `${clamp(finiteNumber(node.noteHeight, 92), 64, 420)}px`;
+        noteBox.style.width = `${clamp(finiteNumber(node.noteWidth, 280), 180, 560)}px`;
+        noteBox.style.height = `${clamp(finiteNumber(node.noteHeight, 130), 80, 460)}px`;
         noteBox.addEventListener("pointerdown", (event) => {
           if (!event.target.closest(".node-note-resize")) {
             event.stopPropagation();
           }
         });
 
+        const noteHeader = document.createElement("div");
+        noteHeader.className = "node-note-header";
+
         const noteTitle = document.createElement("strong");
         noteTitle.textContent = t("node.noteTitle");
+        const closeNoteButton = document.createElement("button");
+        closeNoteButton.type = "button";
+        closeNoteButton.className = "node-note-close";
+        closeNoteButton.textContent = "×";
+        closeNoteButton.setAttribute("aria-label", t("node.closeNote"));
+        closeNoteButton.title = t("node.closeNote");
+        closeNoteButton.addEventListener("pointerdown", (event) => event.stopPropagation());
+        closeNoteButton.addEventListener("click", (event) => {
+          event.stopPropagation();
+          setNodeNoteOpen(node.id, false);
+        });
+        noteHeader.append(noteTitle, closeNoteButton);
+
         const noteText = document.createElement("p");
         noteText.textContent = node.note;
-        noteBox.append(noteTitle, noteText);
+        noteBox.append(noteHeader, noteText);
 
         if (!state.readOnly) {
           const noteResize = document.createElement("span");
@@ -1023,6 +1116,10 @@ function renderEdges() {
     visiblePath.setAttribute("stroke-width", edge.id === state.selectedEdgeId ? "4" : "3");
     visiblePath.setAttribute("class", `edge-path${edge.id === state.selectedEdgeId ? " is-selected" : ""}`);
     visiblePath.dataset.id = edge.id;
+
+    if (edge.lineStyle === "dashed") {
+      visiblePath.setAttribute("stroke-dasharray", "12 9");
+    }
 
     if (edge.arrow === "forward" || edge.arrow === "both") {
       visiblePath.setAttribute("marker-end", `url(#${markerIds.end})`);
@@ -1242,6 +1339,7 @@ function syncInspector() {
   if (edge) {
     edgeLabel.value = edge.label || "";
     edgeShape.value = edge.shape;
+    edgeLineStyle.value = edge.lineStyle || "solid";
     edgeArrow.value = edge.arrow;
     edgeColor.value = edge.color;
   }
@@ -1346,7 +1444,7 @@ function handleNodePointerDown(event) {
     return;
   }
 
-  if (event.target.closest(".node-link-button")) {
+  if (event.target.closest(".node-link-button, .node-note-toggle, .node-note-close")) {
     return;
   }
 
@@ -1358,8 +1456,8 @@ function handleNodePointerDown(event) {
       id: node.id,
       startX: point.x,
       startY: point.y,
-      startWidth: clamp(finiteNumber(node.noteWidth, 220), 160, 520),
-      startHeight: clamp(finiteNumber(node.noteHeight, 92), 64, 420),
+      startWidth: clamp(finiteNumber(node.noteWidth, 280), 180, 560),
+      startHeight: clamp(finiteNumber(node.noteHeight, 130), 80, 460),
       historyCaptured: false,
     };
     return;
@@ -1480,8 +1578,8 @@ function handlePointerMove(event) {
         pushUndo("resize-note");
         state.drag.historyCaptured = true;
       }
-      node.noteWidth = clamp(state.drag.startWidth + point.x - state.drag.startX, 160, 520);
-      node.noteHeight = clamp(state.drag.startHeight + point.y - state.drag.startY, 64, 420);
+      node.noteWidth = clamp(state.drag.startWidth + point.x - state.drag.startX, 180, 560);
+      node.noteHeight = clamp(state.drag.startHeight + point.y - state.drag.startY, 80, 460);
       renderNodes();
       renderEdges();
       syncInspector();
@@ -2232,8 +2330,8 @@ function normalizeNode(node, index) {
     fontFamily: allowedFontFamilies.has(node.fontFamily) ? node.fontFamily : "system",
     note: typeof node.note === "string" ? node.note : "",
     noteOpen: Boolean(node.noteOpen),
-    noteWidth: clamp(finiteNumber(node.noteWidth, 220), 160, 520),
-    noteHeight: clamp(finiteNumber(node.noteHeight, 92), 64, 420),
+    noteWidth: clamp(finiteNumber(node.noteWidth, 280), 180, 560),
+    noteHeight: clamp(finiteNumber(node.noteHeight, 130), 80, 460),
   };
 }
 
@@ -2242,7 +2340,8 @@ function normalizeEdge(edge, index) {
     return null;
   }
 
-  const shape = allowedEdgeShapes.has(edge.shape) ? edge.shape : "curved";
+  const shape = allowedEdgeShapes.has(edge.shape) ? edge.shape : "straight";
+  const lineStyle = allowedEdgeLineStyles.has(edge.lineStyle) ? edge.lineStyle : "solid";
   const arrow = allowedEdgeArrows.has(edge.arrow) ? edge.arrow : "forward";
 
   return {
@@ -2252,6 +2351,7 @@ function normalizeEdge(edge, index) {
     to: edge.to,
     color: isHexColor(edge.color) ? edge.color : "#2563eb",
     shape,
+    lineStyle,
     arrow,
     label: typeof edge.label === "string" ? edge.label : "",
   };
@@ -2453,6 +2553,7 @@ nodeColor.addEventListener("change", () => syncColorPalette(nodeColor.value));
 nodeFontSize.addEventListener("input", () => updateSelectedNode({ fontSize: finiteNumber(nodeFontSize.value, 18) }));
 nodeFontFamily.addEventListener("change", () => updateSelectedNode({ fontFamily: nodeFontFamily.value }));
 edgeShape.addEventListener("change", () => updateSelectedEdge({ shape: edgeShape.value }));
+edgeLineStyle.addEventListener("change", () => updateSelectedEdge({ lineStyle: edgeLineStyle.value }));
 edgeArrow.addEventListener("change", () => updateSelectedEdge({ arrow: edgeArrow.value }));
 edgeColor.addEventListener("input", () => updateSelectedEdge({ color: edgeColor.value }));
 edgeLabel.addEventListener("input", () => updateSelectedEdge({ label: edgeLabel.value }));
@@ -2460,6 +2561,9 @@ shareBtn.addEventListener("click", copyShareUrl);
 exportBackupBtn.addEventListener("click", exportBackupFile);
 importBackupInput.addEventListener("change", importBackupFile);
 restoreBackupBtn.addEventListener("click", restoreLatestBackup);
+noteForm.addEventListener("submit", saveNoteEditor);
+noteCloseBtn.addEventListener("click", closeNoteEditor);
+noteCancelBtn.addEventListener("click", closeNoteEditor);
 loginForm.addEventListener("submit", handleLogin);
 logoutBtn.addEventListener("click", logout);
 languageBtn.addEventListener("click", () => {
@@ -2488,6 +2592,10 @@ window.addEventListener("keydown", (event) => {
   }
 
   if (event.key === "Escape") {
+    if (!noteEditor.hidden) {
+      closeNoteEditor();
+      return;
+    }
     clearSelection();
     closeContextMenu();
   }
