@@ -7,7 +7,29 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <section id="authScreen" class="auth-screen">
+      <form id="loginForm" class="login-card">
+        <div class="login-header">
+          <span class="brand-mark">M</span>
+          <div>
+            <strong>MindMap Studio</strong>
+            <span data-i18n="auth.subtitle">登录后继续编辑脑图</span>
+          </div>
+        </div>
+        <label>
+          <span data-i18n="auth.email">邮箱</span>
+          <input id="loginEmail" type="email" autocomplete="username" required />
+        </label>
+        <label>
+          <span data-i18n="auth.password">密码</span>
+          <input id="loginPassword" type="password" autocomplete="current-password" required />
+        </label>
+        <p id="loginError" class="login-error" hidden data-i18n="auth.error">邮箱或密码不正确。</p>
+        <button id="loginSubmitBtn" class="primary" type="submit" data-i18n="auth.login">登录</button>
+      </form>
+    </section>
+
+    <div id="appShell" class="app-shell" hidden>
       <header class="topbar">
         <div class="brand">
           <span class="brand-mark">M</span>
@@ -31,6 +53,7 @@
           <span class="toolbar-separator"></span>
           <button id="shareBtn" class="primary" type="button" data-i18n="toolbar.share">分享只读链接</button>
           <button id="languageBtn" type="button" aria-pressed="false">EN</button>
+          <button id="logoutBtn" type="button" data-i18n="toolbar.logout">退出登录</button>
           <span id="readonlyBadge" class="readonly-badge" hidden data-i18n="toolbar.readonlyBadge">只读查看</span>
         </div>
       </header>
@@ -45,6 +68,13 @@
             <span data-i18n="maps.currentName">当前脑图名称</span>
             <input id="mapTitleInput" type="text" />
           </label>
+          <div class="backup-actions">
+            <button id="exportBackupBtn" type="button" data-i18n="maps.exportBackup">导出备份</button>
+            <label class="file-import-button" for="importBackupInput" data-i18n="maps.importBackup">导入备份</label>
+            <input id="importBackupInput" type="file" accept="application/json,.json" hidden />
+            <button id="restoreBackupBtn" type="button" data-i18n="maps.restoreBackup">恢复最近备份</button>
+          </div>
+          <p id="dataStatus" class="muted data-status" data-i18n="maps.dataStatusReady">数据会自动保存在此浏览器，并在每次覆盖前保留安全备份。</p>
           <div id="mapList" class="map-list" aria-label="脑图列表"></div>
         </aside>
 

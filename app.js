@@ -1,4 +1,10 @@
 const canvas = document.querySelector("#canvas");
+const appShell = document.querySelector("#appShell");
+const authScreen = document.querySelector("#authScreen");
+const loginForm = document.querySelector("#loginForm");
+const loginEmail = document.querySelector("#loginEmail");
+const loginPassword = document.querySelector("#loginPassword");
+const loginError = document.querySelector("#loginError");
 const world = document.querySelector("#world");
 const nodesLayer = document.querySelector("#nodesLayer");
 const edgesLayer = document.querySelector("#edgesLayer");
@@ -14,10 +20,15 @@ const layoutHorizontalBtn = document.querySelector("#layoutHorizontalBtn");
 const layoutVerticalBtn = document.querySelector("#layoutVerticalBtn");
 const shareBtn = document.querySelector("#shareBtn");
 const languageBtn = document.querySelector("#languageBtn");
+const logoutBtn = document.querySelector("#logoutBtn");
 const readonlyBadge = document.querySelector("#readonlyBadge");
 const newMapBtn = document.querySelector("#newMapBtn");
 const mapTitleInput = document.querySelector("#mapTitleInput");
 const mapList = document.querySelector("#mapList");
+const exportBackupBtn = document.querySelector("#exportBackupBtn");
+const importBackupInput = document.querySelector("#importBackupInput");
+const restoreBackupBtn = document.querySelector("#restoreBackupBtn");
+const dataStatus = document.querySelector("#dataStatus");
 
 const selectionHint = document.querySelector("#selectionHint");
 const readonlyNotice = document.querySelector("#readonlyNotice");
@@ -40,7 +51,14 @@ const modeLabel = document.querySelector("#modeLabel");
 const canvasHelp = document.querySelector(".canvas-help");
 
 const MAP_STORAGE_KEY = "mindmap-template.maps.v1";
+const MAP_BACKUP_STORAGE_KEY = "mindmap-template.maps.backups.v1";
+const STORAGE_VERSION = 2;
+const BACKUP_LIMIT = 50;
+const EDGE_NODE_GAP = 8;
 const LOCALE_STORAGE_KEY = "mindmap-template.locale";
+const AUTH_SESSION_KEY = "mindmap-template.auth.session.v1";
+const AUTH_EMAIL = "lkf9888@gmail.com";
+const AUTH_PASSWORD_SHA256 = "5218edadac6238094722ec741f21193b05903f142a82124e8fb3044374a12429";
 const fontFamilies = {
   system: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif',
   serif: 'Georgia, "Times New Roman", "Noto Serif SC", serif',
@@ -149,7 +167,7 @@ const state = {
   maps: [],
   activeMapId: "map-default",
   activeMapTitle: "项目计划",
-  locale: localStorage.getItem(LOCALE_STORAGE_KEY) === "en" ? "en" : "zh",
+  locale: getStoredLocale(),
 };
 
 const allowedNodeTypes = new Set(["title", "paragraph", "link"]);
@@ -173,7 +191,13 @@ const i18n = {
     "toolbar.share": "分享只读链接",
     "toolbar.shareCopied": "已复制",
     "toolbar.shareCreated": "已生成",
+    "toolbar.logout": "退出登录",
     "toolbar.readonlyBadge": "只读查看",
+    "auth.subtitle": "登录后继续编辑脑图",
+    "auth.email": "邮箱",
+    "auth.password": "密码",
+    "auth.login": "登录",
+    "auth.error": "邮箱或密码不正确。",
     "maps.title": "脑图目录",
     "maps.new": "新建",
     "maps.currentName": "当前脑图名称",
@@ -182,6 +206,19 @@ const i18n = {
     "maps.sharedTitle": "分享脑图",
     "maps.nodeCount": "{count} 个节点",
     "maps.edgeCount": "{count} 条连接",
+    "maps.exportBackup": "导出备份",
+    "maps.importBackup": "导入备份",
+    "maps.restoreBackup": "恢复最近备份",
+    "maps.dataStatusReady": "数据会自动保存在此浏览器，并在每次覆盖前保留安全备份。",
+    "maps.dataStatusSaved": "已保存，并已保留覆盖前备份。",
+    "maps.dataStatusExported": "备份文件已导出。",
+    "maps.dataStatusImported": "已导入 {count} 个脑图，原有数据未覆盖。",
+    "maps.dataStatusRestored": "已从最近备份恢复。",
+    "maps.dataStatusRecovered": "检测到存储异常，已从安全备份恢复。",
+    "maps.dataStatusProtected": "检测到旧数据读取异常，原始内容已转存为安全备份。",
+    "maps.dataStatusSaveFailed": "保存失败：浏览器存储空间不足或被限制。请立即导出备份。",
+    "maps.dataStatusImportFailed": "导入失败：备份文件格式不正确。",
+    "maps.dataStatusNoBackup": "没有可恢复的备份。",
     "canvas.helpEdit": "右键创建/删除 · 滚轮缩放 · 拖动画布平移 · 拖动节点移动 · 拖右下角调整节点大小",
     "canvas.helpReadonly": "只读查看 · 滚轮缩放 · 拖动画布平移 · 点击节点或连接线查看属性",
     "inspector.selection": "选择内容",
@@ -256,7 +293,13 @@ const i18n = {
     "toolbar.share": "Share read-only link",
     "toolbar.shareCopied": "Copied",
     "toolbar.shareCreated": "Created",
+    "toolbar.logout": "Log out",
     "toolbar.readonlyBadge": "Read only",
+    "auth.subtitle": "Sign in to continue editing",
+    "auth.email": "Email",
+    "auth.password": "Password",
+    "auth.login": "Sign in",
+    "auth.error": "Email or password is incorrect.",
     "maps.title": "Mind maps",
     "maps.new": "New",
     "maps.currentName": "Current map name",
@@ -265,6 +308,19 @@ const i18n = {
     "maps.sharedTitle": "Shared map",
     "maps.nodeCount": "{count} nodes",
     "maps.edgeCount": "{count} links",
+    "maps.exportBackup": "Export backup",
+    "maps.importBackup": "Import backup",
+    "maps.restoreBackup": "Restore latest backup",
+    "maps.dataStatusReady": "Data is saved in this browser with a safety backup before each overwrite.",
+    "maps.dataStatusSaved": "Saved, with a pre-overwrite safety backup kept.",
+    "maps.dataStatusExported": "Backup file exported.",
+    "maps.dataStatusImported": "Imported {count} maps without overwriting existing data.",
+    "maps.dataStatusRestored": "Restored from the latest backup.",
+    "maps.dataStatusRecovered": "Storage issue detected; recovered from a safety backup.",
+    "maps.dataStatusProtected": "Stored data could not be read; the raw content was preserved as a safety backup.",
+    "maps.dataStatusSaveFailed": "Save failed: browser storage is full or blocked. Export a backup now.",
+    "maps.dataStatusImportFailed": "Import failed: the backup file format is invalid.",
+    "maps.dataStatusNoBackup": "No restorable backup found.",
     "canvas.helpEdit": "Right-click to create/delete · Wheel to zoom · Drag canvas to pan · Drag nodes to move · Drag lower-right handle to resize",
     "canvas.helpReadonly": "Read-only view · Wheel to zoom · Drag canvas to pan · Click nodes or links to inspect",
     "inspector.selection": "Selection",
@@ -327,6 +383,8 @@ const i18n = {
   },
 };
 
+let appInitialized = false;
+
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
@@ -336,6 +394,96 @@ function t(key, replacements = {}) {
   return Object.entries(replacements).reduce((text, [name, value]) => {
     return text.replaceAll(`{${name}}`, value);
   }, template);
+}
+
+function getStoredLocale() {
+  try {
+    return localStorage.getItem(LOCALE_STORAGE_KEY) === "en" ? "en" : "zh";
+  } catch (error) {
+    return "zh";
+  }
+}
+
+function setDataStatus(key, replacements = {}) {
+  if (!dataStatus) {
+    return;
+  }
+
+  dataStatus.textContent = t(key, replacements);
+}
+
+async function sha256Hex(value) {
+  const bytes = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function getAuthSession() {
+  try {
+    return JSON.parse(localStorage.getItem(AUTH_SESSION_KEY));
+  } catch (error) {
+    return null;
+  }
+}
+
+function isAuthenticated() {
+  const session = getAuthSession();
+  return session?.email === AUTH_EMAIL && session?.authenticated === true;
+}
+
+function showLoginScreen() {
+  authScreen.hidden = false;
+  appShell.hidden = true;
+  loginEmail.value = "LKF9888@gmail.com";
+  loginPassword.value = "";
+  loginError.hidden = true;
+  window.setTimeout(() => loginPassword.focus(), 0);
+}
+
+function unlockApp() {
+  authScreen.hidden = true;
+  appShell.hidden = false;
+  initializeApp();
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  loginError.hidden = true;
+
+  const email = loginEmail.value.trim().toLowerCase();
+  const passwordHash = await sha256Hex(loginPassword.value);
+
+  if (email !== AUTH_EMAIL || passwordHash !== AUTH_PASSWORD_SHA256) {
+    loginError.hidden = false;
+    loginPassword.select();
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      AUTH_SESSION_KEY,
+      JSON.stringify({
+        authenticated: true,
+        email: AUTH_EMAIL,
+        signedInAt: new Date().toISOString(),
+      }),
+    );
+  } catch (error) {
+    console.warn("Unable to persist login session.", error);
+  }
+
+  unlockApp();
+}
+
+function logout() {
+  try {
+    localStorage.removeItem(AUTH_SESSION_KEY);
+  } catch (error) {
+    console.warn("Unable to clear login session.", error);
+  }
+  showLoginScreen();
 }
 
 function applyLocale() {
@@ -355,6 +503,9 @@ function applyLocale() {
   setMode(state.mode === "connect" ? "connect" : "select");
   syncReadOnlyControls();
   renderMapList();
+  if (!dataStatus.textContent.trim()) {
+    setDataStatus("maps.dataStatusReady");
+  }
 }
 
 function getNode(id) {
@@ -685,10 +836,11 @@ function getNodeBounds(id) {
 }
 
 function buildEdgePath(edge, from, to) {
-  const x1 = from.centerX;
-  const y1 = from.centerY;
-  const x2 = to.centerX;
-  const y2 = to.centerY;
+  const { start, end } = getEdgeEndpoints(from, to);
+  const x1 = start.x;
+  const y1 = start.y;
+  const x2 = end.x;
+  const y2 = end.y;
 
   if (edge.shape === "straight") {
     return `M ${x1} ${y1} L ${x2} ${y2}`;
@@ -706,10 +858,11 @@ function buildEdgePath(edge, from, to) {
 }
 
 function getEdgeLabelPosition(edge, from, to) {
-  const x1 = from.centerX;
-  const y1 = from.centerY;
-  const x2 = to.centerX;
-  const y2 = to.centerY;
+  const { start, end } = getEdgeEndpoints(from, to);
+  const x1 = start.x;
+  const y1 = start.y;
+  const x2 = end.x;
+  const y2 = end.y;
 
   if (edge.shape === "elbow") {
     return {
@@ -742,6 +895,44 @@ function getEdgeLabelPosition(edge, from, to) {
   return {
     x: x1 + (x2 - x1) / 2,
     y: y1 + (y2 - y1) / 2,
+  };
+}
+
+function getEdgeEndpoints(from, to) {
+  const sourceCenter = { x: from.centerX, y: from.centerY };
+  const targetCenter = { x: to.centerX, y: to.centerY };
+  const dx = targetCenter.x - sourceCenter.x;
+  const dy = targetCenter.y - sourceCenter.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const unit = { x: dx / length, y: dy / length };
+  const sourceBoundary = projectPointToNodeBoundary(from, unit);
+  const targetBoundary = projectPointToNodeBoundary(to, { x: -unit.x, y: -unit.y });
+
+  return {
+    start: {
+      x: sourceBoundary.x + unit.x * EDGE_NODE_GAP,
+      y: sourceBoundary.y + unit.y * EDGE_NODE_GAP,
+    },
+    end: {
+      x: targetBoundary.x - unit.x * EDGE_NODE_GAP,
+      y: targetBoundary.y - unit.y * EDGE_NODE_GAP,
+    },
+  };
+}
+
+function projectPointToNodeBoundary(bounds, direction) {
+  const halfWidth = Math.max(bounds.width / 2, 1);
+  const halfHeight = Math.max(bounds.height / 2, 1);
+  const absX = Math.abs(direction.x);
+  const absY = Math.abs(direction.y);
+  const scale = Math.min(
+    absX > 0 ? halfWidth / absX : Number.POSITIVE_INFINITY,
+    absY > 0 ? halfHeight / absY : Number.POSITIVE_INFINITY,
+  );
+
+  return {
+    x: bounds.centerX + direction.x * scale,
+    y: bounds.centerY + direction.y * scale,
   };
 }
 
@@ -804,12 +995,14 @@ function syncInspector() {
 }
 
 function syncReadOnlyControls() {
-  const editButtons = [addNodeBtn, connectBtn, deleteBtn, layoutHorizontalBtn, layoutVerticalBtn, newMapBtn];
+  const editButtons = [addNodeBtn, connectBtn, deleteBtn, layoutHorizontalBtn, layoutVerticalBtn, newMapBtn, restoreBackupBtn];
   editButtons.forEach((button) => {
     button.disabled = state.readOnly;
   });
 
   mapTitleInput.disabled = state.readOnly;
+  importBackupInput.disabled = state.readOnly;
+  document.querySelector(".file-import-button")?.classList.toggle("is-disabled", state.readOnly);
 
   [nodeForm, edgeForm].forEach((form) => {
     form.querySelectorAll("input, select, textarea").forEach((control) => {
@@ -1101,7 +1294,9 @@ function createMapId() {
 }
 
 function createStoredMapFromState(name = state.activeMapTitle) {
+  const existingMap = state.maps.find((map) => map.id === state.activeMapId);
   return {
+    ...existingMap,
     ...createMapSnapshot(),
     id: state.activeMapId || createMapId(),
     name: name || t("maps.untitled"),
@@ -1140,27 +1335,160 @@ function createBlankMap(name) {
   };
 }
 
-function loadStoredMaps() {
-  const fallback = createStoredMapFromState(t("maps.defaultTitle"));
+function createStorageEnvelope(maps = state.maps, activeMapId = state.activeMapId) {
+  return {
+    version: STORAGE_VERSION,
+    savedAt: new Date().toISOString(),
+    activeMapId,
+    maps,
+  };
+}
+
+function safeReadStorage(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (error) {
+    console.warn(`Unable to read ${key}.`, error);
+    return null;
+  }
+}
+
+function parseStorageEnvelope(raw) {
+  if (!raw) {
+    return null;
+  }
 
   try {
-    const stored = JSON.parse(localStorage.getItem(MAP_STORAGE_KEY));
-    const maps = Array.isArray(stored?.maps) ? stored.maps.map(normalizeMap).filter(Boolean) : [];
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    const sourceMaps = Array.isArray(parsed) ? parsed : parsed?.maps;
+    if (!Array.isArray(sourceMaps)) {
+      return null;
+    }
 
-    if (maps.length) {
-      state.maps = maps;
-      const activeMap = maps.find((map) => map.id === stored.activeMapId) || maps[0];
+    const maps = sourceMaps.map(normalizeMap).filter(Boolean);
+    if (!maps.length) {
+      return null;
+    }
+
+    return {
+      ...parsed,
+      version: STORAGE_VERSION,
+      activeMapId: typeof parsed?.activeMapId === "string" ? parsed.activeMapId : maps[0].id,
+      maps,
+    };
+  } catch (error) {
+    console.warn("Unable to parse stored mind map data.", error);
+    return null;
+  }
+}
+
+function getSafetyBackups() {
+  try {
+    const backups = JSON.parse(localStorage.getItem(MAP_BACKUP_STORAGE_KEY));
+    return Array.isArray(backups) ? backups : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function writeSafetyBackup(raw, reason, options = {}) {
+  if (!raw) {
+    return false;
+  }
+
+  const hash = hashString(raw);
+  const backups = getSafetyBackups();
+  const duplicate = backups.some((backup) => backup.hash === hash);
+  if (duplicate && !options.force) {
+    return true;
+  }
+
+  const parsed = parseStorageEnvelope(raw);
+  const entry = {
+    id: `backup-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: new Date().toISOString(),
+    reason,
+    hash,
+    raw,
+    summary: parsed
+      ? {
+          activeMapId: parsed.activeMapId,
+          mapCount: parsed.maps.length,
+          nodeCount: parsed.maps.reduce((total, map) => total + map.nodes.length, 0),
+          edgeCount: parsed.maps.reduce((total, map) => total + map.edges.length, 0),
+        }
+      : {
+          unreadable: true,
+        },
+  };
+
+  const nextBackups = [entry, ...backups.filter((backup) => backup.hash !== hash)].slice(0, BACKUP_LIMIT);
+
+  try {
+    localStorage.setItem(MAP_BACKUP_STORAGE_KEY, JSON.stringify(nextBackups));
+    return true;
+  } catch (error) {
+    try {
+      localStorage.setItem(MAP_BACKUP_STORAGE_KEY, JSON.stringify(nextBackups.slice(0, Math.ceil(BACKUP_LIMIT / 2))));
+      return true;
+    } catch (secondError) {
+      console.warn("Unable to write safety backup.", secondError);
+      return false;
+    }
+  }
+}
+
+function findLatestRestorableBackup() {
+  for (const backup of getSafetyBackups()) {
+    const parsed = parseStorageEnvelope(backup.raw);
+    if (parsed?.maps.length) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function hashString(value) {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 33) ^ value.charCodeAt(index);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function loadStoredMaps() {
+  const fallback = createStoredMapFromState(t("maps.defaultTitle"));
+  const rawStorage = safeReadStorage(MAP_STORAGE_KEY);
+
+  if (rawStorage) {
+    const stored = parseStorageEnvelope(rawStorage);
+    if (stored?.maps.length) {
+      state.maps = stored.maps;
+      const activeMap = stored.maps.find((map) => map.id === stored.activeMapId) || stored.maps[0];
       applyMap(activeMap);
       renderMapList();
       return;
     }
-  } catch (error) {
-    console.warn("无法读取本地脑图目录。", error);
+
+    writeSafetyBackup(rawStorage, "unreadable-primary", { force: true });
+    const recovered = findLatestRestorableBackup();
+    if (recovered) {
+      state.maps = recovered.maps;
+      const activeMap = recovered.maps.find((map) => map.id === recovered.activeMapId) || recovered.maps[0];
+      applyMap(activeMap);
+      saveMapsToStorage({ silent: true });
+      setDataStatus("maps.dataStatusRecovered");
+      renderMapList();
+      return;
+    }
+
+    setDataStatus("maps.dataStatusProtected");
   }
 
   state.maps = [normalizeMap(fallback)];
   applyMap(state.maps[0]);
-  saveMapsToStorage();
+  saveMapsToStorage({ silent: Boolean(rawStorage) });
   renderMapList();
 }
 
@@ -1197,18 +1525,35 @@ function persistActiveMap() {
   renderMapList();
 }
 
-function saveMapsToStorage() {
+function saveMapsToStorage(options = {}) {
   if (state.readOnly) {
-    return;
+    return true;
   }
 
-  localStorage.setItem(
-    MAP_STORAGE_KEY,
-    JSON.stringify({
-      activeMapId: state.activeMapId,
-      maps: state.maps,
-    }),
-  );
+  const payload = createStorageEnvelope();
+  const nextSerialized = JSON.stringify(payload);
+  const previousSerialized = safeReadStorage(MAP_STORAGE_KEY);
+
+  if (previousSerialized && previousSerialized !== nextSerialized) {
+    writeSafetyBackup(previousSerialized, "before-overwrite");
+  }
+
+  try {
+    localStorage.setItem(MAP_STORAGE_KEY, nextSerialized);
+    const verification = parseStorageEnvelope(localStorage.getItem(MAP_STORAGE_KEY));
+    if (!verification?.maps.length) {
+      throw new Error("Saved data failed verification.");
+    }
+    writeSafetyBackup(nextSerialized, "last-good");
+    if (!options.silent) {
+      setDataStatus("maps.dataStatusSaved");
+    }
+    return true;
+  } catch (error) {
+    console.error("Unable to save mind map data.", error);
+    setDataStatus("maps.dataStatusSaveFailed");
+    return false;
+  }
 }
 
 function createNewMap() {
@@ -1320,6 +1665,99 @@ function flashShareButton(text) {
   }, 1400);
 }
 
+function exportBackupFile() {
+  persistActiveMap();
+  const exportPayload = {
+    format: "mindmap-template-backup",
+    version: STORAGE_VERSION,
+    exportedAt: new Date().toISOString(),
+    storage: createStorageEnvelope(),
+    safetyBackups: getSafetyBackups(),
+  };
+  const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  link.href = url;
+  link.download = `mindmap-backup-${timestamp}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  setDataStatus("maps.dataStatusExported");
+}
+
+async function importBackupFile(event) {
+  if (state.readOnly) {
+    return;
+  }
+
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) {
+    return;
+  }
+
+  try {
+    const raw = await file.text();
+    const parsed = JSON.parse(raw);
+    const envelope = parseImportedBackup(parsed);
+    if (!envelope?.maps.length) {
+      throw new Error("No maps found in backup.");
+    }
+
+    persistActiveMap();
+    const importedMaps = envelope.maps.map((map, index) => ({
+      ...map,
+      id: createMapId(),
+      name: `${map.name || t("maps.untitled")} (${t("maps.importBackup")} ${index + 1})`,
+    }));
+    state.maps.push(...importedMaps);
+    applyMap(importedMaps[0]);
+    saveMapsToStorage();
+    render();
+    renderMapList();
+    setDataStatus("maps.dataStatusImported", { count: importedMaps.length });
+  } catch (error) {
+    console.error("Unable to import backup file.", error);
+    setDataStatus("maps.dataStatusImportFailed");
+  }
+}
+
+function parseImportedBackup(parsed) {
+  if (parsed?.format === "mindmap-template-backup") {
+    return parseStorageEnvelope(parsed.storage);
+  }
+
+  if (parsed?.storage) {
+    return parseStorageEnvelope(parsed.storage);
+  }
+
+  return parseStorageEnvelope(parsed);
+}
+
+function restoreLatestBackup() {
+  if (state.readOnly) {
+    return;
+  }
+
+  const backup = findLatestRestorableBackup();
+  if (!backup) {
+    setDataStatus("maps.dataStatusNoBackup");
+    return;
+  }
+
+  const currentSerialized = JSON.stringify(createStorageEnvelope());
+  writeSafetyBackup(currentSerialized, "before-restore", { force: true });
+  state.maps = backup.maps;
+  const activeMap = backup.maps.find((map) => map.id === backup.activeMapId) || backup.maps[0];
+  applyMap(activeMap);
+  saveMapsToStorage({ silent: true });
+  render();
+  renderMapList();
+  setDataStatus("maps.dataStatusRestored");
+}
+
 function loadSharedMapFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const hashParams = new URLSearchParams(window.location.hash.slice(1));
@@ -1354,10 +1792,6 @@ function hydrateMap(payload) {
   }
 
   const nodes = payload.nodes.map(normalizeNode).filter(Boolean);
-  if (!nodes.length) {
-    return;
-  }
-
   const nodeIds = new Set(nodes.map((node) => node.id));
   const edges = payload.edges.map(normalizeEdge).filter((edge) => {
     return edge && nodeIds.has(edge.from) && nodeIds.has(edge.to);
@@ -1378,6 +1812,7 @@ function hydrateMap(payload) {
     state.scale = clamp(finiteNumber(payload.view.scale, state.scale), 0.3, 2.4);
   }
 
+  state.maps = [createStoredMapFromState(state.activeMapTitle)];
   mapTitleInput.value = state.activeMapTitle;
 }
 
@@ -1387,14 +1822,11 @@ function normalizeMap(map, index = 0) {
   }
 
   const nodes = map.nodes.map(normalizeNode).filter(Boolean);
-  if (!nodes.length) {
-    return null;
-  }
-
   const nodeIds = new Set(nodes.map((node) => node.id));
   const edges = map.edges.map(normalizeEdge).filter((edge) => edge && nodeIds.has(edge.from) && nodeIds.has(edge.to));
 
   return {
+    ...map,
     version: 1,
     id: typeof map.id === "string" && map.id ? map.id : `map-${index + 1}`,
     name: typeof map.name === "string" && map.name ? map.name : `${t("maps.untitled")} ${index + 1}`,
@@ -1423,6 +1855,7 @@ function normalizeNode(node, index) {
   const defaultDimensions = getDefaultNodeDimensions(shape);
 
   return {
+    ...node,
     id,
     x: clamp(finiteNumber(node.x, 180 + index * 40), 10, 4800),
     y: clamp(finiteNumber(node.y, 180 + index * 40), 10, 3400),
@@ -1447,6 +1880,7 @@ function normalizeEdge(edge, index) {
   const arrow = allowedEdgeArrows.has(edge.arrow) ? edge.arrow : "forward";
 
   return {
+    ...edge,
     id: typeof edge.id === "string" && edge.id ? edge.id : `edge-${index + 1}`,
     from: edge.from,
     to: edge.to,
@@ -1473,6 +1907,21 @@ function getNextNumericId(items, prefix) {
   }, 0);
 
   return maxId + 1;
+}
+
+function initializeApp() {
+  if (appInitialized) {
+    return;
+  }
+
+  appInitialized = true;
+  const sharedLoaded = loadSharedMapFromUrl();
+  if (!sharedLoaded && !state.readOnly) {
+    loadStoredMaps();
+  }
+  applyLocale();
+  applyTransform();
+  render();
 }
 
 nodesLayer.addEventListener("pointerdown", handleNodePointerDown);
@@ -1629,9 +2078,18 @@ edgeArrow.addEventListener("change", () => updateSelectedEdge({ arrow: edgeArrow
 edgeColor.addEventListener("input", () => updateSelectedEdge({ color: edgeColor.value }));
 edgeLabel.addEventListener("input", () => updateSelectedEdge({ label: edgeLabel.value }));
 shareBtn.addEventListener("click", copyShareUrl);
+exportBackupBtn.addEventListener("click", exportBackupFile);
+importBackupInput.addEventListener("change", importBackupFile);
+restoreBackupBtn.addEventListener("click", restoreLatestBackup);
+loginForm.addEventListener("submit", handleLogin);
+logoutBtn.addEventListener("click", logout);
 languageBtn.addEventListener("click", () => {
   state.locale = state.locale === "zh" ? "en" : "zh";
-  localStorage.setItem(LOCALE_STORAGE_KEY, state.locale);
+  try {
+    localStorage.setItem(LOCALE_STORAGE_KEY, state.locale);
+  } catch (error) {
+    console.warn("Unable to save locale.", error);
+  }
   applyLocale();
   render();
 });
@@ -1655,10 +2113,9 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
-const sharedLoaded = loadSharedMapFromUrl();
-if (!sharedLoaded && !state.readOnly) {
-  loadStoredMaps();
-}
 applyLocale();
-applyTransform();
-render();
+if (isAuthenticated()) {
+  unlockApp();
+} else {
+  showLoginScreen();
+}
