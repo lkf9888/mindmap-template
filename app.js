@@ -10,6 +10,7 @@ const nodesLayer = document.querySelector("#nodesLayer");
 const edgesLayer = document.querySelector("#edgesLayer");
 const contextMenu = document.querySelector("#contextMenu");
 
+const undoBtn = document.querySelector("#undoBtn");
 const addNodeBtn = document.querySelector("#addNodeBtn");
 const connectBtn = document.querySelector("#connectBtn");
 const deleteBtn = document.querySelector("#deleteBtn");
@@ -55,6 +56,8 @@ const MAP_STORAGE_KEY = "mindmap-template.maps.v1";
 const MAP_BACKUP_STORAGE_KEY = "mindmap-template.maps.backups.v1";
 const STORAGE_VERSION = 2;
 const BACKUP_LIMIT = 50;
+const UNDO_LIMIT = 80;
+const UNDO_COALESCE_MS = 1200;
 const EDGE_NODE_GAP = 8;
 const LOCALE_STORAGE_KEY = "mindmap-template.locale";
 const AUTH_SESSION_KEY = "mindmap-template.auth.session.v1";
@@ -188,6 +191,8 @@ const state = {
   scale: 1,
   pan: { x: 80, y: 60 },
   drag: null,
+  undoStack: [],
+  isRestoringHistory: false,
   nextNodeId: 5,
   nextEdgeId: 4,
   readOnly: false,
@@ -207,6 +212,7 @@ const i18n = {
   zh: {
     "app.title": "思维脑图绘制模板",
     "app.subtitle": "简易脑图模板",
+    "toolbar.undo": "撤回",
     "toolbar.addNode": "新建节点",
     "toolbar.connect": "连接",
     "toolbar.delete": "删除",
@@ -279,6 +285,7 @@ const i18n = {
     "node.paragraphFallback": "文字段落",
     "node.linkFallback": "超链接",
     "node.visitLink": "访问 Link",
+    "node.noteTitle": "备注",
     "edge.title": "连接线属性",
     "edge.label": "文字注释",
     "edge.labelPlaceholder": "例如：依赖、参考、下一步",
@@ -300,6 +307,7 @@ const i18n = {
     "mode.readonly": "只读",
     "menu.connectFrom": "从此节点开始连线",
     "menu.copyNode": "复制本节点",
+    "menu.addNote": "添加/编辑备注",
     "menu.copyChild": "复制一个子节点",
     "menu.deleteNode": "删除节点",
     "menu.reverseArrow": "反转箭头",
@@ -308,10 +316,13 @@ const i18n = {
     "menu.createLinked": "新建并连接所选节点",
     "menu.clearSelection": "清除选择",
     "prompt.copyReadonly": "复制这个只读链接",
+    "prompt.nodeNote": "输入本节点备注内容，留空会删除备注：",
+    "maps.dataStatusUndone": "已撤回上一步操作。",
   },
   en: {
     "app.title": "Mind Map Drawing Template",
     "app.subtitle": "Simple mind map template",
+    "toolbar.undo": "Undo",
     "toolbar.addNode": "New node",
     "toolbar.connect": "Connect",
     "toolbar.delete": "Delete",
@@ -384,6 +395,7 @@ const i18n = {
     "node.paragraphFallback": "Paragraph",
     "node.linkFallback": "Link",
     "node.visitLink": "Open link",
+    "node.noteTitle": "Note",
     "edge.title": "Link properties",
     "edge.label": "Text note",
     "edge.labelPlaceholder": "Example: depends on, reference, next step",
@@ -405,6 +417,7 @@ const i18n = {
     "mode.readonly": "Read only",
     "menu.connectFrom": "Start link here",
     "menu.copyNode": "Duplicate this node",
+    "menu.addNote": "Add/edit note",
     "menu.copyChild": "Create child copy",
     "menu.deleteNode": "Delete node",
     "menu.reverseArrow": "Reverse arrow",
@@ -413,6 +426,8 @@ const i18n = {
     "menu.createLinked": "Create and link selected node",
     "menu.clearSelection": "Clear selection",
     "prompt.copyReadonly": "Copy this read-only link",
+    "prompt.nodeNote": "Enter this node note. Leave blank to remove it:",
+    "maps.dataStatusUndone": "Undid the last action.",
   },
 };
 
@@ -443,6 +458,85 @@ function setDataStatus(key, replacements = {}) {
   }
 
   dataStatus.textContent = t(key, replacements);
+}
+
+function pushUndo(label, options = {}) {
+  if (state.readOnly || state.isRestoringHistory || !state.maps.length) {
+    return;
+  }
+
+  const now = Date.now();
+  const lastEntry = state.undoStack[state.undoStack.length - 1];
+  if (
+    options.coalesceKey &&
+    lastEntry?.coalesceKey === options.coalesceKey &&
+    now - lastEntry.timestamp < UNDO_COALESCE_MS
+  ) {
+    lastEntry.timestamp = now;
+    return;
+  }
+
+  state.undoStack.push({
+    activeMapId: state.activeMapId,
+    coalesceKey: options.coalesceKey || null,
+    label,
+    snapshot: createMapSnapshot(),
+    timestamp: now,
+  });
+
+  if (state.undoStack.length > UNDO_LIMIT) {
+    state.undoStack.splice(0, state.undoStack.length - UNDO_LIMIT);
+  }
+
+  syncUndoButton();
+}
+
+function clearUndoHistory() {
+  state.undoStack = [];
+  syncUndoButton();
+}
+
+function syncUndoButton() {
+  if (!undoBtn) {
+    return;
+  }
+
+  undoBtn.disabled = state.readOnly || !state.undoStack.length;
+}
+
+function undoLastAction() {
+  if (state.readOnly || !state.undoStack.length) {
+    return;
+  }
+
+  const entry = state.undoStack.pop();
+  const restoredMap = normalizeMap(entry.snapshot);
+  if (!restoredMap) {
+    syncUndoButton();
+    return;
+  }
+
+  state.isRestoringHistory = true;
+  const index = state.maps.findIndex((map) => map.id === entry.activeMapId);
+  if (index >= 0) {
+    state.maps[index] = restoredMap;
+  } else {
+    state.maps.push(restoredMap);
+  }
+
+  applyMap(restoredMap);
+  saveMapsToStorage({ silent: true });
+  render();
+  renderMapList();
+  setDataStatus("maps.dataStatusUndone");
+  state.isRestoringHistory = false;
+  syncUndoButton();
+}
+
+function isReadonlyShareUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.slice(1));
+  return (params.get("view") === "readonly" || params.get("readonly") === "1") && hashParams.has("map");
 }
 
 async function sha256Hex(value) {
@@ -617,6 +711,10 @@ function createNode(point, options = {}) {
     return null;
   }
 
+  if (!options.skipUndo) {
+    pushUndo("create-node");
+  }
+
   const newNode = {
     id: `node-${state.nextNodeId++}`,
     x: finiteNumber(point.x, 0) - 92,
@@ -635,7 +733,7 @@ function createNode(point, options = {}) {
   state.nodes.push(newNode);
 
   if (options.connectFromId) {
-    createEdge(options.connectFromId, newNode.id);
+    createEdge(options.connectFromId, newNode.id, { skipUndo: true });
   }
 
   selectNode(newNode.id);
@@ -643,7 +741,7 @@ function createNode(point, options = {}) {
   return newNode;
 }
 
-function createEdge(from, to) {
+function createEdge(from, to, options = {}) {
   if (state.readOnly) {
     return null;
   }
@@ -656,6 +754,10 @@ function createEdge(from, to) {
   if (duplicate) {
     selectEdge(duplicate.id);
     return duplicate;
+  }
+
+  if (!options.skipUndo) {
+    pushUndo("create-edge");
   }
 
   const edge = {
@@ -684,6 +786,8 @@ function duplicateNode(id, offset = { x: 42, y: 42 }) {
     return null;
   }
 
+  pushUndo("duplicate-node");
+
   const duplicate = {
     ...source,
     id: `node-${state.nextNodeId++}`,
@@ -697,9 +801,52 @@ function duplicateNode(id, offset = { x: 42, y: 42 }) {
   return duplicate;
 }
 
+function editNodeNote(id) {
+  if (state.readOnly) {
+    return;
+  }
+
+  const node = getNode(id);
+  if (!node) {
+    return;
+  }
+
+  const note = window.prompt(t("prompt.nodeNote"), node.note || "");
+  if (note === null) {
+    return;
+  }
+
+  pushUndo("edit-note");
+  const trimmedNote = note.trim();
+  node.note = trimmedNote;
+  node.noteOpen = Boolean(trimmedNote);
+  node.noteWidth = finiteNumber(node.noteWidth, 220);
+  node.noteHeight = finiteNumber(node.noteHeight, 92);
+  render();
+  persistActiveMap();
+}
+
+function toggleNodeNote(id, options = {}) {
+  const node = getNode(id);
+  if (!node?.note) {
+    return false;
+  }
+
+  node.noteOpen = !node.noteOpen;
+  render();
+  if (!state.readOnly && options.persist !== false) {
+    persistActiveMap();
+  }
+  return true;
+}
+
 function deleteSelected() {
   if (state.readOnly) {
     return;
+  }
+
+  if (state.selectedNodeId || state.selectedEdgeId) {
+    pushUndo("delete");
   }
 
   if (state.selectedNodeId) {
@@ -779,6 +926,41 @@ function renderNodes() {
         window.open(node.url, "_blank", "noopener,noreferrer");
       });
       element.append(visitButton);
+    }
+
+    if (node.note) {
+      const noteButton = document.createElement("span");
+      noteButton.className = "node-note-indicator";
+      noteButton.textContent = t("node.noteTitle");
+      noteButton.title = t("node.noteTitle");
+      element.append(noteButton);
+
+      if (node.noteOpen) {
+        const noteBox = document.createElement("section");
+        noteBox.className = "node-note";
+        noteBox.style.width = `${clamp(finiteNumber(node.noteWidth, 220), 160, 520)}px`;
+        noteBox.style.height = `${clamp(finiteNumber(node.noteHeight, 92), 64, 420)}px`;
+        noteBox.addEventListener("pointerdown", (event) => {
+          if (!event.target.closest(".node-note-resize")) {
+            event.stopPropagation();
+          }
+        });
+
+        const noteTitle = document.createElement("strong");
+        noteTitle.textContent = t("node.noteTitle");
+        const noteText = document.createElement("p");
+        noteText.textContent = node.note;
+        noteBox.append(noteTitle, noteText);
+
+        if (!state.readOnly) {
+          const noteResize = document.createElement("span");
+          noteResize.className = "node-note-resize";
+          noteResize.dataset.id = node.id;
+          noteBox.append(noteResize);
+        }
+
+        element.append(noteBox);
+      }
     }
 
     if (!state.readOnly) {
@@ -1087,7 +1269,9 @@ function syncReadOnlyControls() {
   });
 
   readonlyBadge.hidden = !state.readOnly;
+  appShell.classList.toggle("viewer-mode", state.readOnly);
   canvasHelp.textContent = state.readOnly ? t("canvas.helpReadonly") : t("canvas.helpEdit");
+  syncUndoButton();
 }
 
 function renderColorPalette() {
@@ -1158,10 +1342,26 @@ function handleNodePointerDown(event) {
 
   if (state.readOnly) {
     selectNode(node.id);
+    toggleNodeNote(node.id, { persist: false });
     return;
   }
 
   if (event.target.closest(".node-link-button")) {
+    return;
+  }
+
+  if (event.target.closest(".node-note-resize")) {
+    const point = worldPointFromEvent(event);
+    selectNode(node.id);
+    state.drag = {
+      type: "resize-note",
+      id: node.id,
+      startX: point.x,
+      startY: point.y,
+      startWidth: clamp(finiteNumber(node.noteWidth, 220), 160, 520),
+      startHeight: clamp(finiteNumber(node.noteHeight, 92), 64, 420),
+      historyCaptured: false,
+    };
     return;
   }
 
@@ -1176,6 +1376,7 @@ function handleNodePointerDown(event) {
       startY: point.y,
       startWidth: dimensions.width,
       startHeight: dimensions.height,
+      historyCaptured: false,
     };
     return;
   }
@@ -1201,6 +1402,9 @@ function handleNodePointerDown(event) {
     id: node.id,
     offsetX: startPoint.x - node.x,
     offsetY: startPoint.y - node.y,
+    historyCaptured: false,
+    moved: false,
+    toggleNoteOnPointerUp: Boolean(node.note),
   };
 }
 
@@ -1223,6 +1427,7 @@ function handleCanvasPointerDown(event) {
     panX: state.pan.x,
     panY: state.pan.y,
     rect,
+    moved: false,
   };
   clearSelection();
 }
@@ -1236,6 +1441,11 @@ function handlePointerMove(event) {
     const node = getNode(state.drag.id);
     const point = worldPointFromEvent(event);
     if (node) {
+      if (!state.drag.historyCaptured) {
+        pushUndo("move-node");
+        state.drag.historyCaptured = true;
+      }
+      state.drag.moved = true;
       node.x = point.x - state.drag.offsetX;
       node.y = point.y - state.drag.offsetY;
       renderNodes();
@@ -1249,6 +1459,10 @@ function handlePointerMove(event) {
     const node = getNode(state.drag.id);
     const point = worldPointFromEvent(event);
     if (node) {
+      if (!state.drag.historyCaptured) {
+        pushUndo("resize-node");
+        state.drag.historyCaptured = true;
+      }
       node.width = clamp(state.drag.startWidth + point.x - state.drag.startX, 96, 520);
       node.height = clamp(state.drag.startHeight + point.y - state.drag.startY, 56, 360);
       renderNodes();
@@ -1258,20 +1472,51 @@ function handlePointerMove(event) {
     return;
   }
 
+  if (state.drag.type === "resize-note") {
+    const node = getNode(state.drag.id);
+    const point = worldPointFromEvent(event);
+    if (node) {
+      if (!state.drag.historyCaptured) {
+        pushUndo("resize-note");
+        state.drag.historyCaptured = true;
+      }
+      node.noteWidth = clamp(state.drag.startWidth + point.x - state.drag.startX, 160, 520);
+      node.noteHeight = clamp(state.drag.startHeight + point.y - state.drag.startY, 64, 420);
+      renderNodes();
+      renderEdges();
+      syncInspector();
+    }
+    return;
+  }
+
   state.pan.x = state.drag.panX + event.clientX - state.drag.startX;
   state.pan.y = state.drag.panY + event.clientY - state.drag.startY;
+  state.drag.moved = true;
   applyTransform();
 }
 
 function handlePointerUp() {
   if (state.drag) {
-    persistActiveMap();
+    let shouldPersist = true;
+    if (state.drag.type === "node" && !state.drag.moved && state.drag.toggleNoteOnPointerUp) {
+      toggleNodeNote(state.drag.id, { persist: false });
+    } else if (state.drag.type === "node") {
+      shouldPersist = state.drag.moved;
+    } else if (state.drag.type === "resize-node" || state.drag.type === "resize-note") {
+      shouldPersist = state.drag.historyCaptured;
+    } else if (state.drag.type === "canvas") {
+      shouldPersist = state.drag.moved;
+    }
+
+    if (shouldPersist) {
+      persistActiveMap();
+    }
   }
 
   state.drag = null;
 }
 
-function updateSelectedNode(patch) {
+function updateSelectedNode(patch, options = {}) {
   if (state.readOnly) {
     return;
   }
@@ -1281,12 +1526,13 @@ function updateSelectedNode(patch) {
     return;
   }
 
+  pushUndo("update-node", { coalesceKey: options.coalesceKey || `node-${node.id}-${Object.keys(patch).join("-")}` });
   Object.assign(node, patch);
   render();
   persistActiveMap();
 }
 
-function updateSelectedEdge(patch) {
+function updateSelectedEdge(patch, options = {}) {
   if (state.readOnly) {
     return;
   }
@@ -1296,6 +1542,7 @@ function updateSelectedEdge(patch) {
     return;
   }
 
+  pushUndo("update-edge", { coalesceKey: options.coalesceKey || `edge-${edge.id}-${Object.keys(patch).join("-")}` });
   Object.assign(edge, patch);
   render();
   persistActiveMap();
@@ -1329,6 +1576,7 @@ function arrange(direction) {
   const columnGap = 300;
   const rowGap = 150;
 
+  pushUndo("arrange");
   groups.forEach((group, depth) => {
     group.forEach((node, index) => {
       if (direction === "vertical") {
@@ -1573,6 +1821,7 @@ function loadStoredMaps() {
       state.maps = stored.maps;
       const activeMap = stored.maps.find((map) => map.id === stored.activeMapId) || stored.maps[0];
       applyMap(activeMap);
+      clearUndoHistory();
       renderMapList();
       return;
     }
@@ -1583,6 +1832,7 @@ function loadStoredMaps() {
       state.maps = recovered.maps;
       const activeMap = recovered.maps.find((map) => map.id === recovered.activeMapId) || recovered.maps[0];
       applyMap(activeMap);
+      clearUndoHistory();
       saveMapsToStorage({ silent: true });
       setDataStatus("maps.dataStatusRecovered");
       renderMapList();
@@ -1594,6 +1844,7 @@ function loadStoredMaps() {
 
   state.maps = [normalizeMap(fallback)];
   applyMap(state.maps[0]);
+  clearUndoHistory();
   saveMapsToStorage({ silent: Boolean(rawStorage) });
   renderMapList();
 }
@@ -1671,6 +1922,7 @@ function createNewMap() {
   const map = createBlankMap();
   state.maps.push(map);
   applyMap(map);
+  clearUndoHistory();
   saveMapsToStorage();
   render();
   renderMapList();
@@ -1690,6 +1942,7 @@ function switchMap(id) {
 
   persistActiveMap();
   applyMap(map);
+  clearUndoHistory();
   saveMapsToStorage();
   render();
   renderMapList();
@@ -1820,6 +2073,7 @@ async function importBackupFile(event) {
     }));
     state.maps.push(...importedMaps);
     applyMap(importedMaps[0]);
+    clearUndoHistory();
     saveMapsToStorage();
     render();
     renderMapList();
@@ -1858,6 +2112,7 @@ function restoreLatestBackup() {
   state.maps = backup.maps;
   const activeMap = backup.maps.find((map) => map.id === backup.activeMapId) || backup.maps[0];
   applyMap(activeMap);
+  clearUndoHistory();
   saveMapsToStorage({ silent: true });
   render();
   renderMapList();
@@ -1920,6 +2175,7 @@ function hydrateMap(payload) {
 
   state.maps = [createStoredMapFromState(state.activeMapTitle)];
   mapTitleInput.value = state.activeMapTitle;
+  clearUndoHistory();
 }
 
 function normalizeMap(map, index = 0) {
@@ -1974,6 +2230,10 @@ function normalizeNode(node, index) {
     height: clamp(finiteNumber(node.height, defaultDimensions.height), 56, 360),
     fontSize: clamp(finiteNumber(node.fontSize, type === "title" ? 18 : 14), 10, 48),
     fontFamily: allowedFontFamilies.has(node.fontFamily) ? node.fontFamily : "system",
+    note: typeof node.note === "string" ? node.note : "",
+    noteOpen: Boolean(node.noteOpen),
+    noteWidth: clamp(finiteNumber(node.noteWidth, 220), 160, 520),
+    noteHeight: clamp(finiteNumber(node.noteHeight, 92), 64, 420),
   };
 }
 
@@ -2072,6 +2332,10 @@ canvas.addEventListener("contextmenu", (event) => {
         action: () => duplicateNode(nodeId),
       },
       {
+        label: t("menu.addNote"),
+        action: () => editNodeNote(nodeId),
+      },
+      {
         label: t("menu.copyChild"),
         action: () => {
           createNode({ x: point.x + 260, y: point.y + 20 }, { connectFromId: nodeId, text: t("node.child") });
@@ -2095,9 +2359,11 @@ canvas.addEventListener("contextmenu", (event) => {
         action: () => {
           const edge = getEdge(edgeId);
           if (edge) {
+            pushUndo("reverse-edge");
             [edge.from, edge.to] = [edge.to, edge.from];
             edge.arrow = edge.arrow === "backward" ? "forward" : edge.arrow;
             selectEdge(edge.id);
+            persistActiveMap();
           }
         },
       },
@@ -2166,6 +2432,7 @@ connectBtn.addEventListener("click", () => {
   render();
 });
 
+undoBtn.addEventListener("click", undoLastAction);
 deleteBtn.addEventListener("click", deleteSelected);
 zoomInBtn.addEventListener("click", () => zoomAt(1.15));
 zoomOutBtn.addEventListener("click", () => zoomAt(0.85));
@@ -2207,6 +2474,7 @@ languageBtn.addEventListener("click", () => {
 });
 newMapBtn.addEventListener("click", createNewMap);
 mapTitleInput.addEventListener("input", () => {
+  pushUndo("rename-map", { coalesceKey: `map-name-${state.activeMapId}` });
   state.activeMapTitle = mapTitleInput.value.trim() || t("maps.untitled");
   persistActiveMap();
 });
@@ -2226,7 +2494,7 @@ window.addEventListener("keydown", (event) => {
 });
 
 applyLocale();
-if (isAuthenticated()) {
+if (isReadonlyShareUrl() || isAuthenticated()) {
   unlockApp();
 } else {
   showLoginScreen();
