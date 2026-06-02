@@ -2033,6 +2033,16 @@ function isLikelySeedEnvelope(envelope) {
   );
 }
 
+function shouldPreferLocalEnvelope(localEnvelope, cloudEnvelope) {
+  if (!localEnvelope?.maps.length || !cloudEnvelope?.maps.length || isLikelySeedEnvelope(localEnvelope)) {
+    return false;
+  }
+
+  const cloudIsSeed = isLikelySeedEnvelope(cloudEnvelope);
+  const localIsNewer = getEnvelopeTimestamp(localEnvelope) > getEnvelopeTimestamp(cloudEnvelope);
+  return cloudIsSeed || localIsNewer;
+}
+
 async function fetchCloudStorage() {
   const response = await fetch("/api/maps", {
     credentials: "include",
@@ -2064,9 +2074,7 @@ async function loadCloudOrStoredMaps() {
     state.cloudAvailable = true;
 
     if (cloudEnvelope?.maps.length) {
-      const localIsNewer = localEnvelope && getEnvelopeTimestamp(localEnvelope) > getEnvelopeTimestamp(cloudEnvelope);
-      const shouldKeepLocal = localIsNewer && !isLikelySeedEnvelope(localEnvelope);
-      if (shouldKeepLocal) {
+      if (shouldPreferLocalEnvelope(localEnvelope, cloudEnvelope)) {
         applyStorageEnvelope(localEnvelope);
         scheduleCloudSave(localEnvelope, { immediate: true, silent: true });
         setDataStatus("maps.dataStatusCloudSaved");
