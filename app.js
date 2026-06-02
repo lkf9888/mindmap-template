@@ -68,7 +68,7 @@ const EDGE_NODE_GAP = 8;
 const LOCALE_STORAGE_KEY = "mindmap-template.locale";
 const AUTH_SESSION_KEY = "mindmap-template.auth.session.v1";
 const AUTH_EMAIL = "lkf9888@gmail.com";
-const AUTH_PASSWORD_SHA256 = "5218edadac6238094722ec741f21193b05903f142a82124e8fb3044374a12429";
+const CLOUD_SAVE_DEBOUNCE_MS = 900;
 const nodeColorOptions = [
   "#dbeafe",
   "#bfdbfe",
@@ -206,6 +206,11 @@ const state = {
   activeMapId: "map-default",
   activeMapTitle: "项目计划",
   editingNoteId: null,
+  cloudSaveTimer: null,
+  cloudSaveInFlight: false,
+  pendingCloudPayload: null,
+  pendingCloudSilent: false,
+  cloudAvailable: false,
   locale: getStoredLocale(),
 };
 
@@ -252,6 +257,12 @@ const i18n = {
     "maps.restoreBackup": "恢复最近备份",
     "maps.dataStatusReady": "数据会自动保存在此浏览器，并在每次覆盖前保留安全备份。",
     "maps.dataStatusSaved": "已保存，并已保留覆盖前备份。",
+    "maps.dataStatusCloudLoading": "正在从云端加载脑图数据...",
+    "maps.dataStatusCloudLoaded": "已加载云端脑图数据，并同步到此浏览器。",
+    "maps.dataStatusCloudSaved": "已保存到此浏览器，并已同步到云端。",
+    "maps.dataStatusCloudSaveFailed": "已保存到此浏览器，但云同步失败。请稍后重试或导出备份。",
+    "maps.dataStatusCloudAuthRequired": "云同步需要重新登录一次。此浏览器本地数据仍然保留。",
+    "maps.dataStatusCloudUnavailable": "当前无法连接云同步，已使用此浏览器本地数据。",
     "maps.dataStatusExported": "备份文件已导出。",
     "maps.dataStatusImported": "已导入 {count} 个脑图，原有数据未覆盖。",
     "maps.dataStatusRestored": "已从最近备份恢复。",
@@ -373,6 +384,12 @@ const i18n = {
     "maps.restoreBackup": "Restore latest backup",
     "maps.dataStatusReady": "Data is saved in this browser with a safety backup before each overwrite.",
     "maps.dataStatusSaved": "Saved, with a pre-overwrite safety backup kept.",
+    "maps.dataStatusCloudLoading": "Loading mind map data from the cloud...",
+    "maps.dataStatusCloudLoaded": "Loaded cloud mind map data and synced it to this browser.",
+    "maps.dataStatusCloudSaved": "Saved in this browser and synced to the cloud.",
+    "maps.dataStatusCloudSaveFailed": "Saved in this browser, but cloud sync failed. Try again later or export a backup.",
+    "maps.dataStatusCloudAuthRequired": "Cloud sync requires signing in again. Local browser data is still preserved.",
+    "maps.dataStatusCloudUnavailable": "Cloud sync is unavailable right now; using this browser's local data.",
     "maps.dataStatusExported": "Backup file exported.",
     "maps.dataStatusImported": "Imported {count} maps without overwriting existing data.",
     "maps.dataStatusRestored": "Restored from the latest backup.",
@@ -569,14 +586,6 @@ function isReadonlyShareUrl() {
   return (params.get("view") === "readonly" || params.get("readonly") === "1") && hashParams.has("map");
 }
 
-async function sha256Hex(value) {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
 function getAuthSession() {
   try {
     return JSON.parse(localStorage.getItem(AUTH_SESSION_KEY));
@@ -588,6 +597,39 @@ function getAuthSession() {
 function isAuthenticated() {
   const session = getAuthSession();
   return session?.email === AUTH_EMAIL && session?.authenticated === true;
+}
+
+function rememberAuthenticatedSession(email = AUTH_EMAIL) {
+  try {
+    localStorage.setItem(
+      AUTH_SESSION_KEY,
+      JSON.stringify({
+        authenticated: true,
+        email: String(email).toLowerCase(),
+        signedInAt: new Date().toISOString(),
+      }),
+    );
+  } catch (error) {
+    console.warn("Unable to persist login session.", error);
+  }
+}
+
+async function hasServerSession() {
+  try {
+    const response = await fetch("/api/auth", {
+      credentials: "include",
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    });
+    if (!response.ok) {
+      return false;
+    }
+    const result = await response.json();
+    return Boolean(result.authenticated);
+  } catch (error) {
+    return false;
+  }
 }
 
 function showLoginScreen() {
@@ -602,7 +644,7 @@ function showLoginScreen() {
 function unlockApp() {
   authScreen.hidden = true;
   appShell.hidden = false;
-  initializeApp();
+  void initializeApp();
 }
 
 async function handleLogin(event) {
@@ -610,31 +652,41 @@ async function handleLogin(event) {
   loginError.hidden = true;
 
   const email = loginEmail.value.trim().toLowerCase();
-  const passwordHash = await sha256Hex(loginPassword.value);
+  try {
+    const response = await fetch("/api/auth", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        password: loginPassword.value,
+      }),
+    });
 
-  if (email !== AUTH_EMAIL || passwordHash !== AUTH_PASSWORD_SHA256) {
+    if (!response.ok) {
+      throw new Error("Invalid credentials.");
+    }
+
+    rememberAuthenticatedSession(email);
+    unlockApp();
+  } catch (error) {
     loginError.hidden = false;
     loginPassword.select();
-    return;
   }
-
-  try {
-    localStorage.setItem(
-      AUTH_SESSION_KEY,
-      JSON.stringify({
-        authenticated: true,
-        email: AUTH_EMAIL,
-        signedInAt: new Date().toISOString(),
-      }),
-    );
-  } catch (error) {
-    console.warn("Unable to persist login session.", error);
-  }
-
-  unlockApp();
 }
 
-function logout() {
+async function logout() {
+  try {
+    await fetch("/api/auth", {
+      method: "DELETE",
+      credentials: "include",
+    });
+  } catch (error) {
+    console.warn("Unable to clear cloud login session.", error);
+  }
+
   try {
     localStorage.removeItem(AUTH_SESSION_KEY);
   } catch (error) {
@@ -1909,7 +1961,7 @@ function hashString(value) {
   return (hash >>> 0).toString(36);
 }
 
-function loadStoredMaps() {
+function loadStoredMaps(options = {}) {
   const fallback = createStoredMapFromState(t("maps.defaultTitle"));
   const rawStorage = safeReadStorage(MAP_STORAGE_KEY);
 
@@ -1931,7 +1983,7 @@ function loadStoredMaps() {
       const activeMap = recovered.maps.find((map) => map.id === recovered.activeMapId) || recovered.maps[0];
       applyMap(activeMap);
       clearUndoHistory();
-      saveMapsToStorage({ silent: true });
+      saveMapsToStorage({ silent: true, skipCloud: Boolean(options.skipCloud) });
       setDataStatus("maps.dataStatusRecovered");
       renderMapList();
       return;
@@ -1943,8 +1995,107 @@ function loadStoredMaps() {
   state.maps = [normalizeMap(fallback)];
   applyMap(state.maps[0]);
   clearUndoHistory();
-  saveMapsToStorage({ silent: Boolean(rawStorage) });
+  saveMapsToStorage({ silent: Boolean(options.silent || rawStorage), skipCloud: Boolean(options.skipCloud) });
   renderMapList();
+}
+
+function applyStorageEnvelope(envelope) {
+  if (!envelope?.maps.length) {
+    return false;
+  }
+
+  state.maps = envelope.maps;
+  const activeMap = envelope.maps.find((map) => map.id === envelope.activeMapId) || envelope.maps[0];
+  applyMap(activeMap);
+  clearUndoHistory();
+  renderMapList();
+  return true;
+}
+
+function getEnvelopeTimestamp(envelope) {
+  const value = Date.parse(envelope?.savedAt || envelope?.cloudSavedAt || "");
+  return Number.isFinite(value) ? value : 0;
+}
+
+function isLikelySeedEnvelope(envelope) {
+  if (!envelope?.maps || envelope.maps.length !== 1) {
+    return false;
+  }
+
+  const map = envelope.maps[0];
+  const nodeTexts = new Set(map.nodes.map((node) => node.text));
+  return (
+    map.nodes.length === 4 &&
+    map.edges.length === 3 &&
+    nodeTexts.has("项目计划") &&
+    nodeTexts.has("设计原型") &&
+    nodeTexts.has("参考资料")
+  );
+}
+
+async function fetchCloudStorage() {
+  const response = await fetch("/api/maps", {
+    credentials: "include",
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
+
+  if (response.status === 401) {
+    throw new Error("cloud_auth_required");
+  }
+
+  if (!response.ok) {
+    throw new Error("cloud_load_failed");
+  }
+
+  const result = await response.json();
+  return result.storage ? parseStorageEnvelope(result.storage) : null;
+}
+
+async function loadCloudOrStoredMaps() {
+  setDataStatus("maps.dataStatusCloudLoading");
+
+  const rawStorage = safeReadStorage(MAP_STORAGE_KEY);
+  const localEnvelope = parseStorageEnvelope(rawStorage);
+
+  try {
+    const cloudEnvelope = await fetchCloudStorage();
+    state.cloudAvailable = true;
+
+    if (cloudEnvelope?.maps.length) {
+      const localIsNewer = localEnvelope && getEnvelopeTimestamp(localEnvelope) > getEnvelopeTimestamp(cloudEnvelope);
+      const shouldKeepLocal = localIsNewer && !isLikelySeedEnvelope(localEnvelope);
+      if (shouldKeepLocal) {
+        applyStorageEnvelope(localEnvelope);
+        scheduleCloudSave(localEnvelope, { immediate: true, silent: true });
+        setDataStatus("maps.dataStatusCloudSaved");
+        return;
+      }
+
+      applyStorageEnvelope(cloudEnvelope);
+      saveMapsToStorage({ silent: true, skipCloud: true });
+      setDataStatus("maps.dataStatusCloudLoaded");
+      return;
+    }
+
+    if (localEnvelope?.maps.length) {
+      applyStorageEnvelope(localEnvelope);
+      scheduleCloudSave(localEnvelope, { immediate: true, silent: true });
+      setDataStatus("maps.dataStatusCloudSaved");
+      return;
+    }
+
+    loadStoredMaps({ silent: true, skipCloud: true });
+    scheduleCloudSave(createStorageEnvelope(), { immediate: true, silent: true });
+  } catch (error) {
+    if (error.message === "cloud_auth_required") {
+      setDataStatus("maps.dataStatusCloudAuthRequired");
+    } else {
+      setDataStatus("maps.dataStatusCloudUnavailable");
+    }
+    loadStoredMaps({ silent: true, skipCloud: true });
+  }
 }
 
 function applyMap(map) {
@@ -2003,11 +2154,78 @@ function saveMapsToStorage(options = {}) {
     if (!options.silent) {
       setDataStatus("maps.dataStatusSaved");
     }
+    if (!options.skipCloud) {
+      scheduleCloudSave(payload, { silent: Boolean(options.silent) });
+    }
     return true;
   } catch (error) {
     console.error("Unable to save mind map data.", error);
     setDataStatus("maps.dataStatusSaveFailed");
     return false;
+  }
+}
+
+function scheduleCloudSave(payload, options = {}) {
+  if (state.readOnly || !isAuthenticated()) {
+    return;
+  }
+
+  state.pendingCloudPayload = payload || createStorageEnvelope();
+  state.pendingCloudSilent = Boolean(options.silent);
+  window.clearTimeout(state.cloudSaveTimer);
+
+  if (options.immediate) {
+    void flushCloudSave();
+    return;
+  }
+
+  state.cloudSaveTimer = window.setTimeout(() => {
+    void flushCloudSave();
+  }, CLOUD_SAVE_DEBOUNCE_MS);
+}
+
+async function flushCloudSave() {
+  if (state.cloudSaveInFlight || !state.pendingCloudPayload) {
+    return;
+  }
+
+  const payload = state.pendingCloudPayload;
+  const silent = state.pendingCloudSilent;
+  state.pendingCloudPayload = null;
+  state.pendingCloudSilent = false;
+  state.cloudSaveInFlight = true;
+
+  try {
+    const response = await fetch("/api/maps", {
+      method: "PUT",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ storage: payload }),
+    });
+
+    if (response.status === 401) {
+      setDataStatus("maps.dataStatusCloudAuthRequired");
+      return;
+    }
+
+    if (!response.ok) {
+      throw new Error("Cloud save failed.");
+    }
+
+    state.cloudAvailable = true;
+    if (!silent) {
+      setDataStatus("maps.dataStatusCloudSaved");
+    }
+  } catch (error) {
+    console.warn("Unable to sync mind map data to cloud.", error);
+    setDataStatus("maps.dataStatusCloudSaveFailed");
+  } finally {
+    state.cloudSaveInFlight = false;
+    if (state.pendingCloudPayload) {
+      void flushCloudSave();
+    }
   }
 }
 
@@ -2375,18 +2593,18 @@ function getNextNumericId(items, prefix) {
   return maxId + 1;
 }
 
-function initializeApp() {
+async function initializeApp() {
   if (appInitialized) {
     return;
   }
 
   appInitialized = true;
   renderColorPalette();
+  applyLocale();
   const sharedLoaded = loadSharedMapFromUrl();
   if (!sharedLoaded && !state.readOnly) {
-    loadStoredMaps();
+    await loadCloudOrStoredMaps();
   }
-  applyLocale();
   applyTransform();
   render();
 }
@@ -2602,8 +2820,24 @@ window.addEventListener("keydown", (event) => {
 });
 
 applyLocale();
-if (isReadonlyShareUrl() || isAuthenticated()) {
-  unlockApp();
-} else {
+void bootstrapApp();
+
+async function bootstrapApp() {
+  if (isReadonlyShareUrl()) {
+    unlockApp();
+    return;
+  }
+
+  if (await hasServerSession()) {
+    rememberAuthenticatedSession();
+    unlockApp();
+    return;
+  }
+
+  try {
+    localStorage.removeItem(AUTH_SESSION_KEY);
+  } catch (error) {
+    console.warn("Unable to clear stale login session.", error);
+  }
   showLoginScreen();
 }
