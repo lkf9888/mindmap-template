@@ -489,6 +489,35 @@ button.primary {
   overflow-wrap: anywhere;
 }
 
+.node.has-tree-list {
+  align-items: start;
+  padding: 14px;
+  text-align: left;
+}
+
+.node.has-tree-list .node-content {
+  display: grid;
+  width: 100%;
+  gap: 10px;
+}
+
+.node--pill.has-tree-list,
+.node--circle.has-tree-list {
+  border-radius: 18px;
+  place-items: stretch;
+}
+
+.node--diamond.has-tree-list {
+  transform: none;
+}
+
+.node--diamond.has-tree-list .node-content,
+.node--diamond.has-tree-list .node-link-button,
+.node--diamond.has-tree-list .node-note-toggle,
+.node--diamond.has-tree-list .node-resize-handle {
+  transform: none;
+}
+
 .node:hover {
   border-color: rgba(37, 99, 235, 0.55);
 }
@@ -570,6 +599,100 @@ button.primary {
 
 .node a:hover {
   text-decoration: underline;
+}
+
+.node-tree {
+  width: 100%;
+  min-width: 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.14);
+  padding-top: 9px;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+}
+
+.node-tree-list {
+  position: relative;
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.node-tree-list .node-tree-list {
+  margin: 5px 0 0 17px;
+  border-left: 1px dotted rgba(71, 85, 105, 0.5);
+  padding-left: 18px;
+}
+
+.node-tree-item {
+  position: relative;
+  min-width: 0;
+}
+
+.node-tree-list .node-tree-list > .node-tree-item::before {
+  position: absolute;
+  top: 12px;
+  left: -18px;
+  width: 13px;
+  border-top: 1px dotted rgba(71, 85, 105, 0.5);
+  content: "";
+}
+
+.node-tree-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+  min-height: 20px;
+}
+
+.node-tree-icon {
+  position: relative;
+  flex: 0 0 15px;
+  width: 15px;
+  height: 17px;
+  margin-top: 1px;
+  border: 1px solid rgba(96, 116, 146, 0.56);
+  border-radius: 2px;
+  background: linear-gradient(135deg, #fff 0 68%, #dbeafe 69% 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.65);
+}
+
+.node-tree-row.has-children .node-tree-icon {
+  height: 13px;
+  margin-top: 3px;
+  border-color: rgba(180, 133, 20, 0.62);
+  border-radius: 3px;
+  background: linear-gradient(#fde68a, #facc15);
+}
+
+.node-tree-row.has-children .node-tree-icon::before {
+  position: absolute;
+  top: -4px;
+  left: 1px;
+  width: 8px;
+  height: 5px;
+  border: 1px solid rgba(180, 133, 20, 0.5);
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  background: #fde68a;
+  content: "";
+}
+
+.node-tree-label {
+  min-width: 0;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+a.node-tree-label {
+  color: #0f3f99;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .node-link-button {
@@ -792,6 +915,85 @@ input[type="color"] {
 textarea {
   min-height: 92px;
   resize: vertical;
+}
+
+.tree-editor-field {
+  display: grid;
+  gap: 9px;
+  margin-top: 4px;
+}
+
+.tree-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #344054;
+  font-size: 13px;
+}
+
+.tree-editor-header > span {
+  font-weight: 700;
+}
+
+.tree-editor-header button {
+  min-height: 32px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.tree-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.tree-editor-group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tree-editor-item {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  margin-left: calc(var(--tree-depth, 0) * 18px);
+}
+
+.tree-editor-branch {
+  grid-row: 1 / 4;
+  width: 14px;
+  height: 100%;
+  min-height: 78px;
+  border-left: 1px dotted rgba(71, 85, 105, 0.46);
+  border-bottom: 1px dotted rgba(71, 85, 105, 0.46);
+}
+
+.tree-editor-item input {
+  grid-column: 2;
+  min-width: 0;
+  padding: 8px 9px;
+  font-size: 12px;
+}
+
+.tree-editor-actions {
+  display: grid;
+  grid-column: 2;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.tree-editor-actions button {
+  min-height: 30px;
+  padding: 0 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tree-editor-actions button.danger {
+  border-color: rgba(217, 45, 32, 0.24);
+  color: var(--danger);
 }
 
 .status-grid {

@@ -44,6 +44,9 @@ const nodeColor = document.querySelector("#nodeColor");
 const nodeColorPalette = document.querySelector("#nodeColorPalette");
 const nodeFontSize = document.querySelector("#nodeFontSize");
 const nodeFontFamily = document.querySelector("#nodeFontFamily");
+const addRootTreeItemBtn = document.querySelector("#addRootTreeItemBtn");
+const nodeTreeEmptyHint = document.querySelector("#nodeTreeEmptyHint");
+const nodeTreeEditor = document.querySelector("#nodeTreeEditor");
 const edgeLabel = document.querySelector("#edgeLabel");
 const edgeShape = document.querySelector("#edgeShape");
 const edgeLineStyle = document.querySelector("#edgeLineStyle");
@@ -306,6 +309,17 @@ const i18n = {
     "node.visitLink": "访问 Link",
     "node.noteTitle": "备注",
     "node.closeNote": "关闭备注",
+    "node.treeList": "树状列表",
+    "node.treeAddRoot": "添加根行",
+    "node.treeEmptyHint": "右键节点选择“添加树状列表”，或点击这里添加第一行。",
+    "node.treeItemDefault": "新列表项",
+    "node.treeText": "文字",
+    "node.treeUrl": "链接",
+    "node.treeTextPlaceholder": "输入列表文字",
+    "node.treeUrlPlaceholder": "可选链接地址",
+    "node.treeAddSibling": "加同级",
+    "node.treeAddChild": "加子级",
+    "node.treeDelete": "删除",
     "edge.title": "连接线属性",
     "edge.label": "文字注释",
     "edge.labelPlaceholder": "例如：依赖、参考、下一步",
@@ -331,6 +345,7 @@ const i18n = {
     "menu.connectFrom": "从此节点开始连线",
     "menu.copyNode": "复制本节点",
     "menu.addNote": "添加/编辑备注",
+    "menu.addTreeList": "添加/编辑树状列表",
     "menu.copyChild": "复制一个子节点",
     "menu.deleteNode": "删除节点",
     "menu.reverseArrow": "反转箭头",
@@ -433,6 +448,17 @@ const i18n = {
     "node.visitLink": "Open link",
     "node.noteTitle": "Note",
     "node.closeNote": "Close note",
+    "node.treeList": "Tree list",
+    "node.treeAddRoot": "Add root row",
+    "node.treeEmptyHint": "Right-click the node and choose Add tree list, or add the first row here.",
+    "node.treeItemDefault": "New list item",
+    "node.treeText": "Text",
+    "node.treeUrl": "Link",
+    "node.treeTextPlaceholder": "Enter list text",
+    "node.treeUrlPlaceholder": "Optional URL",
+    "node.treeAddSibling": "Add row",
+    "node.treeAddChild": "Add child",
+    "node.treeDelete": "Delete",
     "edge.title": "Link properties",
     "edge.label": "Text note",
     "edge.labelPlaceholder": "Example: depends on, reference, next step",
@@ -458,6 +484,7 @@ const i18n = {
     "menu.connectFrom": "Start link here",
     "menu.copyNode": "Duplicate this node",
     "menu.addNote": "Add/edit note",
+    "menu.addTreeList": "Add/edit tree list",
     "menu.copyChild": "Create child copy",
     "menu.deleteNode": "Delete node",
     "menu.reverseArrow": "Reverse arrow",
@@ -782,6 +809,65 @@ function viewportCenterAsWorldPoint() {
   };
 }
 
+function createTreeItem(text = t("node.treeItemDefault")) {
+  return {
+    id: `tree-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    text,
+    url: "",
+    children: [],
+  };
+}
+
+function normalizeTreeItems(items, path = "root") {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items
+    .map((item, index) => normalizeTreeItem(item, `${path}-${index + 1}`))
+    .filter(Boolean);
+}
+
+function normalizeTreeItem(item, path) {
+  if (typeof item === "string") {
+    return {
+      id: `tree-${path}`,
+      text: item,
+      url: "",
+      children: [],
+    };
+  }
+
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+
+  return {
+    id: typeof item.id === "string" && item.id ? item.id : `tree-${path}`,
+    text: typeof item.text === "string" ? item.text : t("node.treeItemDefault"),
+    url: typeof item.url === "string" ? item.url : "",
+    children: normalizeTreeItems(item.children, path),
+  };
+}
+
+function cloneTreeItems(items) {
+  return normalizeTreeItems(items).map((item) => ({
+    ...item,
+    children: cloneTreeItems(item.children),
+  }));
+}
+
+function cloneNodeForStorage(node) {
+  return {
+    ...node,
+    treeItems: cloneTreeItems(node.treeItems),
+  };
+}
+
+function hasTreeItems(node) {
+  return Array.isArray(node?.treeItems) && node.treeItems.length > 0;
+}
+
 function applyTransform({ animate = false } = {}) {
   world.classList.toggle("is-zooming", animate);
   world.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.scale})`;
@@ -814,6 +900,7 @@ function createNode(point, options = {}) {
     height: options.height || 76,
     fontSize: options.fontSize || 18,
     fontFamily: options.fontFamily || "system",
+    treeItems: cloneTreeItems(options.treeItems),
   };
 
   state.nodes.push(newNode);
@@ -876,7 +963,7 @@ function duplicateNode(id, offset = { x: 42, y: 42 }) {
   pushUndo("duplicate-node");
 
   const duplicate = {
-    ...source,
+    ...cloneNodeForStorage(source),
     id: `node-${state.nextNodeId++}`,
     x: finiteNumber(source.x, 0) + offset.x,
     y: finiteNumber(source.y, 0) + offset.y,
@@ -886,6 +973,32 @@ function duplicateNode(id, offset = { x: 42, y: 42 }) {
   selectNode(duplicate.id);
   persistActiveMap();
   return duplicate;
+}
+
+function ensureNodeTreeList(id) {
+  if (state.readOnly) {
+    return null;
+  }
+
+  const node = getNode(id);
+  if (!node) {
+    return null;
+  }
+
+  selectNode(id);
+
+  if (hasTreeItems(node)) {
+    render();
+    return node;
+  }
+
+  pushUndo("add-tree-list");
+  node.treeItems = [createTreeItem()];
+  node.width = Math.max(finiteNumber(node.width, 184), 260);
+  node.height = Math.max(finiteNumber(node.height, 76), 138);
+  render();
+  persistActiveMap();
+  return node;
 }
 
 function editNodeNote(id) {
@@ -1007,10 +1120,16 @@ function renderNodes() {
     element.style.left = `${node.x}px`;
     element.style.top = `${node.y}px`;
     element.style.width = `${dimensions.width}px`;
-    element.style.height = `${dimensions.height}px`;
+    if (hasTreeItems(node)) {
+      element.style.minHeight = `${dimensions.height}px`;
+      element.style.height = "auto";
+    } else {
+      element.style.height = `${dimensions.height}px`;
+    }
     element.style.background = node.color;
     element.classList.toggle("is-selected", node.id === state.selectedNodeId);
     element.classList.toggle("is-readonly", state.readOnly);
+    element.classList.toggle("has-tree-list", hasTreeItems(node));
 
     const content = document.createElement("div");
     content.className = "node-content";
@@ -1034,6 +1153,10 @@ function renderNodes() {
       paragraph.style.fontSize = `${getNodeFontSize(node)}px`;
       paragraph.textContent = node.text || t("node.paragraphFallback");
       content.append(paragraph);
+    }
+
+    if (hasTreeItems(node)) {
+      content.append(renderNodeTreeList(node.treeItems));
     }
 
     element.append(content);
@@ -1117,6 +1240,53 @@ function renderNodes() {
 
     nodesLayer.append(element);
   });
+}
+
+function renderNodeTreeList(items) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "node-tree";
+
+  const list = document.createElement("ul");
+  list.className = "node-tree-list";
+  items.forEach((item) => list.append(renderNodeTreeItem(item)));
+  wrapper.append(list);
+
+  return wrapper;
+}
+
+function renderNodeTreeItem(item) {
+  const listItem = document.createElement("li");
+  listItem.className = "node-tree-item";
+
+  const row = document.createElement("div");
+  row.className = `node-tree-row${item.children.length ? " has-children" : ""}`;
+
+  const icon = document.createElement("span");
+  icon.className = "node-tree-icon";
+  icon.setAttribute("aria-hidden", "true");
+
+  const label = item.url ? document.createElement("a") : document.createElement("span");
+  label.className = "node-tree-label";
+  label.textContent = item.text || t("node.treeItemDefault");
+  if (item.url) {
+    label.href = item.url;
+    label.target = "_blank";
+    label.rel = "noreferrer";
+    label.addEventListener("pointerdown", (event) => event.stopPropagation());
+    label.addEventListener("click", (event) => event.stopPropagation());
+  }
+
+  row.append(icon, label);
+  listItem.append(row);
+
+  if (item.children.length) {
+    const childList = document.createElement("ul");
+    childList.className = "node-tree-list";
+    item.children.forEach((child) => childList.append(renderNodeTreeItem(child)));
+    listItem.append(childList);
+  }
+
+  return listItem;
 }
 
 function getNodeDimensions(node) {
@@ -1386,6 +1556,10 @@ function syncInspector() {
     syncColorPalette(node.color);
     nodeFontSize.value = getNodeFontSize(node);
     nodeFontFamily.value = allowedFontFamilies.has(node.fontFamily) ? node.fontFamily : "system";
+    renderTreeEditor(node);
+  } else {
+    nodeTreeEditor.replaceChildren();
+    nodeTreeEmptyHint.hidden = false;
   }
 
   if (edge) {
@@ -1397,6 +1571,175 @@ function syncInspector() {
   }
 
   syncReadOnlyControls();
+}
+
+function renderTreeEditor(node) {
+  nodeTreeEditor.replaceChildren();
+  const items = normalizeTreeItems(node.treeItems);
+  nodeTreeEmptyHint.hidden = items.length > 0;
+
+  items.forEach((item, index) => {
+    nodeTreeEditor.append(renderTreeEditorItem(item, [index]));
+  });
+}
+
+function renderTreeEditorItem(item, path) {
+  const row = document.createElement("div");
+  row.className = "tree-editor-item";
+  row.style.setProperty("--tree-depth", path.length - 1);
+
+  const branch = document.createElement("span");
+  branch.className = "tree-editor-branch";
+  branch.setAttribute("aria-hidden", "true");
+
+  const textInput = document.createElement("input");
+  textInput.type = "text";
+  textInput.value = item.text;
+  textInput.placeholder = t("node.treeTextPlaceholder");
+  textInput.setAttribute("aria-label", t("node.treeText"));
+  textInput.addEventListener("input", () => {
+    updateSelectedTreeItemField(path, "text", textInput.value);
+  });
+
+  const urlInput = document.createElement("input");
+  urlInput.type = "url";
+  urlInput.value = item.url;
+  urlInput.placeholder = t("node.treeUrlPlaceholder");
+  urlInput.setAttribute("aria-label", t("node.treeUrl"));
+  urlInput.addEventListener("input", () => {
+    updateSelectedTreeItemField(path, "url", urlInput.value);
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "tree-editor-actions";
+
+  const addSiblingButton = document.createElement("button");
+  addSiblingButton.type = "button";
+  addSiblingButton.textContent = t("node.treeAddSibling");
+  addSiblingButton.addEventListener("click", () => addTreeSibling(path));
+
+  const addChildButton = document.createElement("button");
+  addChildButton.type = "button";
+  addChildButton.textContent = t("node.treeAddChild");
+  addChildButton.addEventListener("click", () => addTreeChild(path));
+
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "danger";
+  deleteButton.textContent = t("node.treeDelete");
+  deleteButton.addEventListener("click", () => deleteTreeItem(path));
+
+  actions.append(addSiblingButton, addChildButton, deleteButton);
+  row.append(branch, textInput, urlInput, actions);
+
+  const group = document.createElement("div");
+  group.className = "tree-editor-group";
+  group.append(row);
+
+  item.children.forEach((child, index) => {
+    group.append(renderTreeEditorItem(child, [...path, index]));
+  });
+
+  return group;
+}
+
+function findTreeEntry(items, path) {
+  let list = items;
+
+  for (let depth = 0; depth < path.length; depth += 1) {
+    const index = path[depth];
+    const item = list[index];
+    if (!item) {
+      return null;
+    }
+
+    if (depth === path.length - 1) {
+      return { list, index, item };
+    }
+
+    list = item.children;
+  }
+
+  return null;
+}
+
+function growNodeForTreeList(node) {
+  node.width = Math.max(finiteNumber(node.width, 184), 260);
+  node.height = Math.max(finiteNumber(node.height, 76), 138);
+}
+
+function mutateSelectedTreeItems(label, mutator) {
+  if (state.readOnly) {
+    return;
+  }
+
+  const node = state.selectedNodeId ? getNode(state.selectedNodeId) : null;
+  if (!node) {
+    return;
+  }
+
+  pushUndo(label);
+  node.treeItems = normalizeTreeItems(node.treeItems);
+  growNodeForTreeList(node);
+  mutator(node.treeItems);
+  render();
+  persistActiveMap();
+}
+
+function addRootTreeItem() {
+  mutateSelectedTreeItems("add-tree-root", (items) => {
+    items.push(createTreeItem());
+  });
+}
+
+function addTreeSibling(path) {
+  mutateSelectedTreeItems("add-tree-sibling", (items) => {
+    const entry = findTreeEntry(items, path);
+    if (entry) {
+      entry.list.splice(entry.index + 1, 0, createTreeItem());
+    }
+  });
+}
+
+function addTreeChild(path) {
+  mutateSelectedTreeItems("add-tree-child", (items) => {
+    const entry = findTreeEntry(items, path);
+    if (entry) {
+      entry.item.children.push(createTreeItem());
+    }
+  });
+}
+
+function deleteTreeItem(path) {
+  mutateSelectedTreeItems("delete-tree-item", (items) => {
+    const entry = findTreeEntry(items, path);
+    if (entry) {
+      entry.list.splice(entry.index, 1);
+    }
+  });
+}
+
+function updateSelectedTreeItemField(path, field, value) {
+  if (state.readOnly) {
+    return;
+  }
+
+  const node = state.selectedNodeId ? getNode(state.selectedNodeId) : null;
+  if (!node || !["text", "url"].includes(field)) {
+    return;
+  }
+
+  node.treeItems = normalizeTreeItems(node.treeItems);
+  const entry = findTreeEntry(node.treeItems, path);
+  if (!entry || entry.item[field] === value) {
+    return;
+  }
+
+  pushUndo("update-tree-item", { coalesceKey: `tree-${node.id}-${path.join(".")}-${field}` });
+  entry.item[field] = value;
+  renderNodes();
+  requestAnimationFrame(renderEdges);
+  persistActiveMap();
 }
 
 function syncReadOnlyControls() {
@@ -1413,7 +1756,7 @@ function syncReadOnlyControls() {
   });
 
   [nodeForm, edgeForm].forEach((form) => {
-    form.querySelectorAll("input, select, textarea").forEach((control) => {
+    form.querySelectorAll("input, select, textarea, button").forEach((control) => {
       control.disabled = state.readOnly;
     });
   });
@@ -1496,7 +1839,7 @@ function handleNodePointerDown(event) {
     return;
   }
 
-  if (event.target.closest(".node-link-button, .node-note-toggle, .node-note-close")) {
+  if (event.target.closest(".node-link-button, .node-note-toggle, .node-note-close, .node-tree a")) {
     return;
   }
 
@@ -1782,7 +2125,7 @@ function createMapSnapshot() {
     version: 1,
     id: state.activeMapId,
     name: state.activeMapTitle,
-    nodes: state.nodes.map((node) => ({ ...node })),
+    nodes: state.nodes.map(cloneNodeForStorage),
     edges: state.edges.map((edge) => ({ ...edge })),
     nextNodeId: state.nextNodeId,
     nextEdgeId: state.nextEdgeId,
@@ -1827,6 +2170,7 @@ function createBlankMap(name) {
         height: 76,
         fontSize: 18,
         fontFamily: "system",
+        treeItems: [],
       },
     ],
     edges: [],
@@ -2558,6 +2902,7 @@ function normalizeNode(node, index) {
     noteOpen: Boolean(node.noteOpen),
     noteWidth: clamp(finiteNumber(node.noteWidth, 280), 180, 560),
     noteHeight: clamp(finiteNumber(node.noteHeight, 130), 80, 460),
+    treeItems: normalizeTreeItems(node.treeItems),
   };
 }
 
@@ -2660,6 +3005,10 @@ canvas.addEventListener("contextmenu", (event) => {
       {
         label: t("menu.addNote"),
         action: () => editNodeNote(nodeId),
+      },
+      {
+        label: t("menu.addTreeList"),
+        action: () => ensureNodeTreeList(nodeId),
       },
       {
         label: t("menu.copyChild"),
@@ -2778,6 +3127,7 @@ nodeColor.addEventListener("input", () => updateSelectedNode({ color: nodeColor.
 nodeColor.addEventListener("change", () => syncColorPalette(nodeColor.value));
 nodeFontSize.addEventListener("input", () => updateSelectedNode({ fontSize: finiteNumber(nodeFontSize.value, 18) }));
 nodeFontFamily.addEventListener("change", () => updateSelectedNode({ fontFamily: nodeFontFamily.value }));
+addRootTreeItemBtn.addEventListener("click", addRootTreeItem);
 edgeShape.addEventListener("change", () => updateSelectedEdge({ shape: edgeShape.value }));
 edgeLineStyle.addEventListener("change", () => updateSelectedEdge({ lineStyle: edgeLineStyle.value }));
 edgeArrow.addEventListener("change", () => updateSelectedEdge({ arrow: edgeArrow.value }));

@@ -149,6 +149,14 @@
                 <option value="rounded" data-i18n="node.fontRounded">圆润字体</option>
               </select>
             </label>
+            <div id="nodeTreeSection" class="tree-editor-field">
+              <div class="tree-editor-header">
+                <span data-i18n="node.treeList">树状列表</span>
+                <button id="addRootTreeItemBtn" type="button" data-i18n="node.treeAddRoot">添加根行</button>
+              </div>
+              <p id="nodeTreeEmptyHint" class="muted" data-i18n="node.treeEmptyHint">右键节点选择“添加树状列表”，或点击这里添加第一行。</p>
+              <div id="nodeTreeEditor" class="tree-editor" aria-label="节点树状列表"></div>
+            </div>
           </form>
 
           <form id="edgeForm" class="panel-section" hidden>
