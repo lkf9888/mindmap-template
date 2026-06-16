@@ -238,6 +238,7 @@ const i18n = {
     "toolbar.horizontal": "横向排布",
     "toolbar.vertical": "纵向排布",
     "toolbar.share": "分享只读链接",
+    "toolbar.shareCreating": "创建中...",
     "toolbar.shareCopied": "已复制",
     "toolbar.shareCreated": "已生成",
     "toolbar.logout": "退出登录",
@@ -377,6 +378,7 @@ const i18n = {
     "toolbar.horizontal": "Horizontal",
     "toolbar.vertical": "Vertical",
     "toolbar.share": "Share read-only link",
+    "toolbar.shareCreating": "Creating...",
     "toolbar.shareCopied": "Copied",
     "toolbar.shareCreated": "Created",
     "toolbar.logout": "Log out",
@@ -610,7 +612,11 @@ function undoLastAction() {
 function isReadonlyShareUrl() {
   const params = new URLSearchParams(window.location.search);
   const hashParams = new URLSearchParams(window.location.hash.slice(1));
-  return (params.get("view") === "readonly" || params.get("readonly") === "1") && hashParams.has("map");
+  return (
+    params.has("s") ||
+    params.has("share") ||
+    ((params.get("view") === "readonly" || params.get("readonly") === "1") && hashParams.has("map"))
+  );
 }
 
 function getAuthSession() {
@@ -2665,15 +2671,68 @@ function decodeMapPayload(value) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
-function buildShareUrl() {
-  const url = new URL(window.location.href);
+async function fetchSharedMap(id) {
+  const response = await fetch(`/api/share?id=${encodeURIComponent(id)}`, {
+    headers: {
+      "Cache-Control": "no-store",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("Shared map could not be loaded.");
+  }
+
+  const result = await response.json();
+  return result.map;
+}
+
+function buildLegacyShareUrl() {
+  const url = new URL(window.location.origin + window.location.pathname);
   url.searchParams.set("view", "readonly");
   url.hash = `map=${encodeMapPayload(createMapSnapshot())}`;
   return url.toString();
 }
 
+function buildShortShareUrl(id) {
+  const url = new URL(window.location.origin + window.location.pathname);
+  url.searchParams.set("s", id);
+  return url.toString();
+}
+
+async function createShortShareUrl() {
+  persistActiveMap();
+
+  const response = await fetch("/api/share", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ map: createMapSnapshot() }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Short share link creation failed.");
+  }
+
+  const result = await response.json();
+  if (!result?.id) {
+    throw new Error("Short share link response is missing an id.");
+  }
+
+  return buildShortShareUrl(result.id);
+}
+
 async function copyShareUrl() {
-  const link = buildShareUrl();
+  flashShareButton(t("toolbar.shareCreating"));
+
+  let link;
+  try {
+    link = await createShortShareUrl();
+  } catch (error) {
+    console.warn("Unable to create short share link; using legacy embedded link.", error);
+    link = buildLegacyShareUrl();
+  }
 
   try {
     await navigator.clipboard.writeText(link);
@@ -2787,13 +2846,23 @@ function restoreLatestBackup() {
   setDataStatus("maps.dataStatusRestored");
 }
 
-function loadSharedMapFromUrl() {
+async function loadSharedMapFromUrl() {
   const params = new URLSearchParams(window.location.search);
   const hashParams = new URLSearchParams(window.location.hash.slice(1));
+  const shareId = String(params.get("s") || params.get("share") || "").trim();
   const payload = hashParams.get("map");
   let sharedLoaded = false;
 
-  if (payload) {
+  state.readOnly = Boolean(shareId) || params.get("view") === "readonly" || params.get("readonly") === "1";
+
+  if (shareId) {
+    try {
+      hydrateMap(await fetchSharedMap(shareId));
+      sharedLoaded = true;
+    } catch (error) {
+      console.warn("无法读取短分享链接中的脑图数据。", error);
+    }
+  } else if (payload) {
     try {
       hydrateMap(decodeMapPayload(payload));
       sharedLoaded = true;
@@ -2801,8 +2870,6 @@ function loadSharedMapFromUrl() {
       console.warn("无法读取分享链接中的脑图数据。", error);
     }
   }
-
-  state.readOnly = params.get("view") === "readonly" || params.get("readonly") === "1";
 
   if (state.readOnly) {
     state.selectedNodeId = null;
@@ -2954,7 +3021,7 @@ async function initializeApp() {
   appInitialized = true;
   renderColorPalette();
   applyLocale();
-  const sharedLoaded = loadSharedMapFromUrl();
+  const sharedLoaded = await loadSharedMapFromUrl();
   if (!sharedLoaded && !state.readOnly) {
     await loadCloudOrStoredMaps();
   }

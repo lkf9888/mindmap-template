@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "python3 -m http.server ${PORT:-5174}",
     "dev:vercel": "npx vercel dev --listen 5174",
-    "check": "node --check app.js && node --check api/auth.js && node --check api/maps.js"
+    "check": "node --check app.js && node --check api/auth.js && node --check api/maps.js && node --check api/share.js"
   },
   "dependencies": {
     "@vercel/blob": "^2.4.0"
