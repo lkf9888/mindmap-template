@@ -44,6 +44,7 @@ const nodeColor = document.querySelector("#nodeColor");
 const nodeColorPalette = document.querySelector("#nodeColorPalette");
 const nodeFontSize = document.querySelector("#nodeFontSize");
 const nodeFontFamily = document.querySelector("#nodeFontFamily");
+const nodeRecurring = document.querySelector("#nodeRecurring");
 const addRootTreeItemBtn = document.querySelector("#addRootTreeItemBtn");
 const nodeTreeEmptyHint = document.querySelector("#nodeTreeEmptyHint");
 const nodeTreeEditor = document.querySelector("#nodeTreeEditor");
@@ -120,6 +121,7 @@ const state = {
       height: 76,
       fontSize: 18,
       fontFamily: "system",
+      isRecurring: false,
     },
     {
       id: "node-2",
@@ -134,6 +136,7 @@ const state = {
       height: 92,
       fontSize: 14,
       fontFamily: "system",
+      isRecurring: false,
     },
     {
       id: "node-3",
@@ -148,6 +151,7 @@ const state = {
       height: 72,
       fontSize: 18,
       fontFamily: "system",
+      isRecurring: false,
     },
     {
       id: "node-4",
@@ -162,6 +166,7 @@ const state = {
       height: 136,
       fontSize: 14,
       fontFamily: "system",
+      isRecurring: false,
     },
   ],
   edges: [
@@ -194,6 +199,7 @@ const state = {
     },
   ],
   selectedNodeId: "node-1",
+  selectedNodeIds: ["node-1"],
   selectedEdgeId: null,
   connectFromId: null,
   mode: "select",
@@ -218,7 +224,8 @@ const state = {
 };
 
 const allowedNodeTypes = new Set(["title", "paragraph", "link"]);
-const allowedNodeShapes = new Set(["rounded", "pill", "circle", "diamond", "note"]);
+const allowedNodeShapes = new Set(["rounded", "pill", "circle", "folder", "note"]);
+const batchEditableNodeFields = new Set(["type", "shape", "color", "fontSize", "fontFamily", "isRecurring"]);
 const allowedEdgeShapes = new Set(["curved", "straight", "elbow"]);
 const allowedEdgeLineStyles = new Set(["solid", "dashed"]);
 const allowedEdgeArrows = new Set(["forward", "backward", "both", "none"]);
@@ -291,7 +298,7 @@ const i18n = {
     "node.shapeRounded": "圆角矩形",
     "node.shapePill": "胶囊",
     "node.shapeCircle": "圆形",
-    "node.shapeDiamond": "菱形",
+    "node.shapeFolder": "文件夹",
     "node.shapeNote": "便签",
     "node.color": "颜色",
     "node.palette": "快速颜色",
@@ -301,6 +308,9 @@ const i18n = {
     "node.fontSerif": "衬线字体",
     "node.fontMono": "等宽字体",
     "node.fontRounded": "圆润字体",
+    "node.recurringTask": "循环任务",
+    "node.recurringIcon": "循环任务",
+    "node.timeIcon": "时间",
     "node.new": "新节点",
     "node.child": "子节点",
     "node.branch": "新分支",
@@ -431,7 +441,7 @@ const i18n = {
     "node.shapeRounded": "Rounded rectangle",
     "node.shapePill": "Pill",
     "node.shapeCircle": "Circle",
-    "node.shapeDiamond": "Diamond",
+    "node.shapeFolder": "Folder",
     "node.shapeNote": "Note",
     "node.color": "Color",
     "node.palette": "Quick colors",
@@ -441,6 +451,9 @@ const i18n = {
     "node.fontSerif": "Serif",
     "node.fontMono": "Monospace",
     "node.fontRounded": "Rounded",
+    "node.recurringTask": "Recurring task",
+    "node.recurringIcon": "Recurring task",
+    "node.timeIcon": "Time",
     "node.new": "New node",
     "node.child": "Child node",
     "node.branch": "New branch",
@@ -765,6 +778,40 @@ function getEdge(id) {
   return state.edges.find((edge) => edge.id === id);
 }
 
+function getSelectedNodeIds() {
+  const rawIds = Array.isArray(state.selectedNodeIds) ? state.selectedNodeIds : [];
+  const uniqueIds = [];
+
+  rawIds.forEach((id) => {
+    if (!uniqueIds.includes(id) && getNode(id)) {
+      uniqueIds.push(id);
+    }
+  });
+
+  if (!uniqueIds.length && state.selectedNodeId && getNode(state.selectedNodeId)) {
+    uniqueIds.push(state.selectedNodeId);
+  }
+
+  return uniqueIds;
+}
+
+function setSelectedNodes(ids, primaryId = null) {
+  const uniqueIds = [];
+  ids.forEach((id) => {
+    if (!uniqueIds.includes(id) && getNode(id)) {
+      uniqueIds.push(id);
+    }
+  });
+
+  state.selectedNodeIds = uniqueIds;
+  state.selectedNodeId = uniqueIds.includes(primaryId) ? primaryId : uniqueIds[uniqueIds.length - 1] || null;
+  state.selectedEdgeId = null;
+}
+
+function isNodeSelected(id) {
+  return getSelectedNodeIds().includes(id);
+}
+
 function setMode(mode) {
   if (state.readOnly) {
     state.mode = "readonly";
@@ -779,20 +826,29 @@ function setMode(mode) {
   modeLabel.textContent = mode === "connect" ? t("mode.connect") : t("mode.select");
 }
 
-function selectNode(id) {
-  state.selectedNodeId = id;
-  state.selectedEdgeId = null;
+function selectNode(id, options = {}) {
+  if (options.toggle) {
+    const selectedIds = getSelectedNodeIds();
+    const nextIds = selectedIds.includes(id) ? selectedIds.filter((selectedId) => selectedId !== id) : [...selectedIds, id];
+    setSelectedNodes(nextIds, selectedIds.includes(id) ? nextIds[nextIds.length - 1] : id);
+  } else if (options.keepGroup && isNodeSelected(id)) {
+    setSelectedNodes(getSelectedNodeIds(), id);
+  } else {
+    setSelectedNodes([id], id);
+  }
   render();
 }
 
 function selectEdge(id) {
   state.selectedEdgeId = id;
   state.selectedNodeId = null;
+  state.selectedNodeIds = [];
   render();
 }
 
 function clearSelection() {
   state.selectedNodeId = null;
+  state.selectedNodeIds = [];
   state.selectedEdgeId = null;
   state.connectFromId = null;
   setMode("select");
@@ -906,6 +962,7 @@ function createNode(point, options = {}) {
     height: options.height || 76,
     fontSize: options.fontSize || 18,
     fontFamily: options.fontFamily || "system",
+    isRecurring: Boolean(options.isRecurring),
     treeItems: cloneTreeItems(options.treeItems),
   };
 
@@ -1087,15 +1144,18 @@ function deleteSelected() {
     return;
   }
 
-  if (state.selectedNodeId || state.selectedEdgeId) {
+  const selectedNodeIds = getSelectedNodeIds();
+
+  if (selectedNodeIds.length || state.selectedEdgeId) {
     pushUndo("delete");
   }
 
-  if (state.selectedNodeId) {
-    const id = state.selectedNodeId;
-    state.nodes = state.nodes.filter((node) => node.id !== id);
-    state.edges = state.edges.filter((edge) => edge.from !== id && edge.to !== id);
+  if (selectedNodeIds.length) {
+    const deleteIds = new Set(selectedNodeIds);
+    state.nodes = state.nodes.filter((node) => !deleteIds.has(node.id));
+    state.edges = state.edges.filter((edge) => !deleteIds.has(edge.from) && !deleteIds.has(edge.to));
     state.selectedNodeId = null;
+    state.selectedNodeIds = [];
     state.connectFromId = null;
   } else if (state.selectedEdgeId) {
     const id = state.selectedEdgeId;
@@ -1133,7 +1193,7 @@ function renderNodes() {
       element.style.height = `${dimensions.height}px`;
     }
     element.style.background = node.color;
-    element.classList.toggle("is-selected", node.id === state.selectedNodeId);
+    element.classList.toggle("is-selected", isNodeSelected(node.id));
     element.classList.toggle("is-readonly", state.readOnly);
     element.classList.toggle("has-tree-list", hasTreeItems(node));
 
@@ -1166,6 +1226,11 @@ function renderNodes() {
     }
 
     element.append(content);
+
+    const statusIcons = renderNodeStatusIcons(node);
+    if (statusIcons) {
+      element.append(statusIcons);
+    }
 
     if (node.type === "link" && node.url) {
       const visitButton = document.createElement("button");
@@ -1248,6 +1313,45 @@ function renderNodes() {
   });
 }
 
+function hasNodeTimeMarker(node) {
+  return Boolean(node.dueAt || node.dueDate || node.startAt || node.startDate || node.time);
+}
+
+function getNodeTimeTitle(node) {
+  return String(node.dueAt || node.dueDate || node.startAt || node.startDate || node.time || t("node.timeIcon"));
+}
+
+function renderNodeStatusIcons(node) {
+  const icons = [];
+
+  if (hasNodeTimeMarker(node)) {
+    const timeIcon = document.createElement("span");
+    timeIcon.className = "node-status-icon node-status-icon--time";
+    timeIcon.textContent = "◷";
+    timeIcon.title = getNodeTimeTitle(node);
+    timeIcon.setAttribute("aria-label", t("node.timeIcon"));
+    icons.push(timeIcon);
+  }
+
+  if (node.isRecurring) {
+    const recurringIcon = document.createElement("span");
+    recurringIcon.className = "node-status-icon node-status-icon--recurring";
+    recurringIcon.textContent = "↻";
+    recurringIcon.title = t("node.recurringIcon");
+    recurringIcon.setAttribute("aria-label", t("node.recurringIcon"));
+    icons.push(recurringIcon);
+  }
+
+  if (!icons.length) {
+    return null;
+  }
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "node-status-icons";
+  wrapper.append(...icons);
+  return wrapper;
+}
+
 function renderNodeTreeList(items) {
   const wrapper = document.createElement("div");
   wrapper.className = "node-tree";
@@ -1308,8 +1412,8 @@ function getDefaultNodeDimensions(shape) {
     return { width: 136, height: 136 };
   }
 
-  if (shape === "diamond") {
-    return { width: 154, height: 154 };
+  if (shape === "folder") {
+    return { width: 220, height: 92 };
   }
 
   if (shape === "pill") {
@@ -1562,6 +1666,7 @@ function syncInspector() {
     syncColorPalette(node.color);
     nodeFontSize.value = getNodeFontSize(node);
     nodeFontFamily.value = allowedFontFamilies.has(node.fontFamily) ? node.fontFamily : "system";
+    nodeRecurring.checked = Boolean(node.isRecurring);
     renderTreeEditor(node);
   } else {
     nodeTreeEditor.replaceChildren();
@@ -1849,6 +1954,11 @@ function handleNodePointerDown(event) {
     return;
   }
 
+  if (event.metaKey || event.ctrlKey) {
+    selectNode(node.id, { toggle: true });
+    return;
+  }
+
   if (event.target.closest(".node-note-resize")) {
     const point = worldPointFromEvent(event);
     selectNode(node.id);
@@ -1893,17 +2003,32 @@ function handleNodePointerDown(event) {
     return;
   }
 
-  selectNode(node.id);
+  if (isNodeSelected(node.id)) {
+    setSelectedNodes(getSelectedNodeIds(), node.id);
+    render();
+  } else {
+    selectNode(node.id);
+  }
 
   const startPoint = worldPointFromEvent(event);
+  const selectedIds = isNodeSelected(node.id) ? getSelectedNodeIds() : [node.id];
   state.drag = {
     type: "node",
     id: node.id,
-    offsetX: startPoint.x - node.x,
-    offsetY: startPoint.y - node.y,
+    selectedIds,
+    startX: startPoint.x,
+    startY: startPoint.y,
+    startPositions: selectedIds.map((selectedId) => {
+      const selectedNode = getNode(selectedId);
+      return {
+        id: selectedId,
+        x: finiteNumber(selectedNode?.x, 0),
+        y: finiteNumber(selectedNode?.y, 0),
+      };
+    }),
     historyCaptured: false,
     moved: false,
-    toggleNoteOnPointerUp: Boolean(node.note),
+    toggleNoteOnPointerUp: Boolean(node.note) && selectedIds.length === 1,
   };
 }
 
@@ -1937,16 +2062,22 @@ function handlePointerMove(event) {
   }
 
   if (state.drag.type === "node") {
-    const node = getNode(state.drag.id);
     const point = worldPointFromEvent(event);
-    if (node) {
+    const deltaX = point.x - state.drag.startX;
+    const deltaY = point.y - state.drag.startY;
+    if (state.drag.startPositions?.length) {
       if (!state.drag.historyCaptured) {
         pushUndo("move-node");
         state.drag.historyCaptured = true;
       }
       state.drag.moved = true;
-      node.x = point.x - state.drag.offsetX;
-      node.y = point.y - state.drag.offsetY;
+      state.drag.startPositions.forEach((position) => {
+        const selectedNode = getNode(position.id);
+        if (selectedNode) {
+          selectedNode.x = position.x + deltaX;
+          selectedNode.y = position.y + deltaY;
+        }
+      });
       renderNodes();
       renderEdges();
       syncInspector();
@@ -2020,13 +2151,20 @@ function updateSelectedNode(patch, options = {}) {
     return;
   }
 
-  const node = state.selectedNodeId ? getNode(state.selectedNodeId) : null;
-  if (!node) {
+  const patchKeys = Object.keys(patch);
+  const selectedIds = getSelectedNodeIds();
+  const applyToBatch = selectedIds.length > 1 && patchKeys.every((key) => batchEditableNodeFields.has(key));
+  const targetIds = applyToBatch ? selectedIds : [state.selectedNodeId].filter(Boolean);
+  const nodes = targetIds.map(getNode).filter(Boolean);
+  if (!nodes.length) {
     return;
   }
 
-  pushUndo("update-node", { coalesceKey: options.coalesceKey || `node-${node.id}-${Object.keys(patch).join("-")}` });
-  Object.assign(node, patch);
+  const coalesceTarget = applyToBatch ? targetIds.join(",") : targetIds[0];
+  pushUndo("update-node", { coalesceKey: options.coalesceKey || `node-${coalesceTarget}-${patchKeys.join("-")}` });
+  nodes.forEach((node) => {
+    Object.assign(node, patch);
+  });
   render();
   persistActiveMap();
 }
@@ -2176,6 +2314,7 @@ function createBlankMap(name) {
         height: 76,
         fontSize: 18,
         fontFamily: "system",
+        isRecurring: false,
         treeItems: [],
       },
     ],
@@ -2469,6 +2608,7 @@ function applyMap(map) {
   };
   state.scale = clamp(finiteNumber(map.view?.scale, 1), 0.3, 2.4);
   state.selectedNodeId = state.nodes[0]?.id || null;
+  state.selectedNodeIds = state.selectedNodeId ? [state.selectedNodeId] : [];
   state.selectedEdgeId = null;
   state.connectFromId = null;
   mapTitleInput.value = state.activeMapTitle;
@@ -2873,6 +3013,7 @@ async function loadSharedMapFromUrl() {
 
   if (state.readOnly) {
     state.selectedNodeId = null;
+    state.selectedNodeIds = [];
     state.selectedEdgeId = null;
     state.connectFromId = null;
   }
@@ -2948,7 +3089,8 @@ function normalizeNode(node, index) {
 
   const id = typeof node.id === "string" && node.id ? node.id : `node-${index + 1}`;
   const type = allowedNodeTypes.has(node.type) ? node.type : "title";
-  const shape = allowedNodeShapes.has(node.shape) ? node.shape : "rounded";
+  const rawShape = node.shape === "diamond" ? "folder" : node.shape;
+  const shape = allowedNodeShapes.has(rawShape) ? rawShape : "rounded";
   const defaultDimensions = getDefaultNodeDimensions(shape);
 
   return {
@@ -2965,6 +3107,7 @@ function normalizeNode(node, index) {
     height: clamp(finiteNumber(node.height, defaultDimensions.height), 56, 360),
     fontSize: clamp(finiteNumber(node.fontSize, type === "title" ? 18 : 14), 10, 48),
     fontFamily: allowedFontFamilies.has(node.fontFamily) ? node.fontFamily : "system",
+    isRecurring: Boolean(node.isRecurring || node.recurring),
     note: typeof node.note === "string" ? node.note : "",
     noteOpen: Boolean(node.noteOpen),
     noteWidth: clamp(finiteNumber(node.noteWidth, 280), 180, 560),
@@ -3055,7 +3198,7 @@ canvas.addEventListener("contextmenu", (event) => {
 
   if (nodeElement) {
     const nodeId = nodeElement.dataset.id;
-    selectNode(nodeId);
+    selectNode(nodeId, { keepGroup: true });
     openContextMenu(event, [
       {
         label: t("menu.connectFrom"),
@@ -3194,6 +3337,7 @@ nodeColor.addEventListener("input", () => updateSelectedNode({ color: nodeColor.
 nodeColor.addEventListener("change", () => syncColorPalette(nodeColor.value));
 nodeFontSize.addEventListener("input", () => updateSelectedNode({ fontSize: finiteNumber(nodeFontSize.value, 18) }));
 nodeFontFamily.addEventListener("change", () => updateSelectedNode({ fontFamily: nodeFontFamily.value }));
+nodeRecurring.addEventListener("change", () => updateSelectedNode({ isRecurring: nodeRecurring.checked }));
 addRootTreeItemBtn.addEventListener("click", addRootTreeItem);
 edgeShape.addEventListener("change", () => updateSelectedEdge({ shape: edgeShape.value }));
 edgeLineStyle.addEventListener("change", () => updateSelectedEdge({ lineStyle: edgeLineStyle.value }));
