@@ -608,40 +608,6 @@ button.primary {
   text-decoration: underline;
 }
 
-.node-status-icons {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  pointer-events: none;
-  z-index: 3;
-}
-
-.node-status-icon {
-  display: inline-grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border: 1px solid rgba(100, 116, 139, 0.22);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
-  color: #475467;
-  font-size: 14px;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.node-status-icon--recurring {
-  color: #0f766e;
-}
-
-.node-status-icon--time {
-  color: #1d4ed8;
-}
-
 .node-tree {
   width: 100%;
   min-width: 0;
@@ -918,20 +884,6 @@ label {
   margin-bottom: 12px;
   color: #344054;
   font-size: 13px;
-}
-
-.checkbox-field {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin-bottom: 14px;
-}
-
-.checkbox-field input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  padding: 0;
 }
 
 input,

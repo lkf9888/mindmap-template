@@ -44,7 +44,6 @@ const nodeColor = document.querySelector("#nodeColor");
 const nodeColorPalette = document.querySelector("#nodeColorPalette");
 const nodeFontSize = document.querySelector("#nodeFontSize");
 const nodeFontFamily = document.querySelector("#nodeFontFamily");
-const nodeRecurring = document.querySelector("#nodeRecurring");
 const addRootTreeItemBtn = document.querySelector("#addRootTreeItemBtn");
 const nodeTreeEmptyHint = document.querySelector("#nodeTreeEmptyHint");
 const nodeTreeEditor = document.querySelector("#nodeTreeEditor");
@@ -121,7 +120,6 @@ const state = {
       height: 76,
       fontSize: 18,
       fontFamily: "system",
-      isRecurring: false,
     },
     {
       id: "node-2",
@@ -136,7 +134,6 @@ const state = {
       height: 92,
       fontSize: 14,
       fontFamily: "system",
-      isRecurring: false,
     },
     {
       id: "node-3",
@@ -151,7 +148,6 @@ const state = {
       height: 72,
       fontSize: 18,
       fontFamily: "system",
-      isRecurring: false,
     },
     {
       id: "node-4",
@@ -166,7 +162,6 @@ const state = {
       height: 136,
       fontSize: 14,
       fontFamily: "system",
-      isRecurring: false,
     },
   ],
   edges: [
@@ -225,7 +220,7 @@ const state = {
 
 const allowedNodeTypes = new Set(["title", "paragraph", "link"]);
 const allowedNodeShapes = new Set(["rounded", "pill", "circle", "folder", "note"]);
-const batchEditableNodeFields = new Set(["type", "shape", "color", "fontSize", "fontFamily", "isRecurring"]);
+const batchEditableNodeFields = new Set(["type", "shape", "color", "fontSize", "fontFamily"]);
 const allowedEdgeShapes = new Set(["curved", "straight", "elbow"]);
 const allowedEdgeLineStyles = new Set(["solid", "dashed"]);
 const allowedEdgeArrows = new Set(["forward", "backward", "both", "none"]);
@@ -308,9 +303,6 @@ const i18n = {
     "node.fontSerif": "衬线字体",
     "node.fontMono": "等宽字体",
     "node.fontRounded": "圆润字体",
-    "node.recurringTask": "循环任务",
-    "node.recurringIcon": "循环任务",
-    "node.timeIcon": "时间",
     "node.new": "新节点",
     "node.child": "子节点",
     "node.branch": "新分支",
@@ -451,9 +443,6 @@ const i18n = {
     "node.fontSerif": "Serif",
     "node.fontMono": "Monospace",
     "node.fontRounded": "Rounded",
-    "node.recurringTask": "Recurring task",
-    "node.recurringIcon": "Recurring task",
-    "node.timeIcon": "Time",
     "node.new": "New node",
     "node.child": "Child node",
     "node.branch": "New branch",
@@ -962,7 +951,6 @@ function createNode(point, options = {}) {
     height: options.height || 76,
     fontSize: options.fontSize || 18,
     fontFamily: options.fontFamily || "system",
-    isRecurring: Boolean(options.isRecurring),
     treeItems: cloneTreeItems(options.treeItems),
   };
 
@@ -1227,11 +1215,6 @@ function renderNodes() {
 
     element.append(content);
 
-    const statusIcons = renderNodeStatusIcons(node);
-    if (statusIcons) {
-      element.append(statusIcons);
-    }
-
     if (node.type === "link" && node.url) {
       const visitButton = document.createElement("button");
       visitButton.type = "button";
@@ -1311,45 +1294,6 @@ function renderNodes() {
 
     nodesLayer.append(element);
   });
-}
-
-function hasNodeTimeMarker(node) {
-  return Boolean(node.dueAt || node.dueDate || node.startAt || node.startDate || node.time);
-}
-
-function getNodeTimeTitle(node) {
-  return String(node.dueAt || node.dueDate || node.startAt || node.startDate || node.time || t("node.timeIcon"));
-}
-
-function renderNodeStatusIcons(node) {
-  const icons = [];
-
-  if (hasNodeTimeMarker(node)) {
-    const timeIcon = document.createElement("span");
-    timeIcon.className = "node-status-icon node-status-icon--time";
-    timeIcon.textContent = "◷";
-    timeIcon.title = getNodeTimeTitle(node);
-    timeIcon.setAttribute("aria-label", t("node.timeIcon"));
-    icons.push(timeIcon);
-  }
-
-  if (node.isRecurring) {
-    const recurringIcon = document.createElement("span");
-    recurringIcon.className = "node-status-icon node-status-icon--recurring";
-    recurringIcon.textContent = "↻";
-    recurringIcon.title = t("node.recurringIcon");
-    recurringIcon.setAttribute("aria-label", t("node.recurringIcon"));
-    icons.push(recurringIcon);
-  }
-
-  if (!icons.length) {
-    return null;
-  }
-
-  const wrapper = document.createElement("div");
-  wrapper.className = "node-status-icons";
-  wrapper.append(...icons);
-  return wrapper;
 }
 
 function renderNodeTreeList(items) {
@@ -1666,7 +1610,6 @@ function syncInspector() {
     syncColorPalette(node.color);
     nodeFontSize.value = getNodeFontSize(node);
     nodeFontFamily.value = allowedFontFamilies.has(node.fontFamily) ? node.fontFamily : "system";
-    nodeRecurring.checked = Boolean(node.isRecurring);
     renderTreeEditor(node);
   } else {
     nodeTreeEditor.replaceChildren();
@@ -2314,7 +2257,6 @@ function createBlankMap(name) {
         height: 76,
         fontSize: 18,
         fontFamily: "system",
-        isRecurring: false,
         treeItems: [],
       },
     ],
@@ -3087,6 +3029,7 @@ function normalizeNode(node, index) {
     return null;
   }
 
+  const { isRecurring, recurring, ...nodeData } = node;
   const id = typeof node.id === "string" && node.id ? node.id : `node-${index + 1}`;
   const type = allowedNodeTypes.has(node.type) ? node.type : "title";
   const rawShape = node.shape === "diamond" ? "folder" : node.shape;
@@ -3094,7 +3037,7 @@ function normalizeNode(node, index) {
   const defaultDimensions = getDefaultNodeDimensions(shape);
 
   return {
-    ...node,
+    ...nodeData,
     id,
     x: finiteNumber(node.x, 180 + index * 40),
     y: finiteNumber(node.y, 180 + index * 40),
@@ -3107,7 +3050,6 @@ function normalizeNode(node, index) {
     height: clamp(finiteNumber(node.height, defaultDimensions.height), 56, 360),
     fontSize: clamp(finiteNumber(node.fontSize, type === "title" ? 18 : 14), 10, 48),
     fontFamily: allowedFontFamilies.has(node.fontFamily) ? node.fontFamily : "system",
-    isRecurring: Boolean(node.isRecurring || node.recurring),
     note: typeof node.note === "string" ? node.note : "",
     noteOpen: Boolean(node.noteOpen),
     noteWidth: clamp(finiteNumber(node.noteWidth, 280), 180, 560),
@@ -3337,7 +3279,6 @@ nodeColor.addEventListener("input", () => updateSelectedNode({ color: nodeColor.
 nodeColor.addEventListener("change", () => syncColorPalette(nodeColor.value));
 nodeFontSize.addEventListener("input", () => updateSelectedNode({ fontSize: finiteNumber(nodeFontSize.value, 18) }));
 nodeFontFamily.addEventListener("change", () => updateSelectedNode({ fontFamily: nodeFontFamily.value }));
-nodeRecurring.addEventListener("change", () => updateSelectedNode({ isRecurring: nodeRecurring.checked }));
 addRootTreeItemBtn.addEventListener("click", addRootTreeItem);
 edgeShape.addEventListener("change", () => updateSelectedEdge({ shape: edgeShape.value }));
 edgeLineStyle.addEventListener("change", () => updateSelectedEdge({ lineStyle: edgeLineStyle.value }));
