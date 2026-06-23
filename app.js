@@ -43,7 +43,6 @@ const nodeShape = document.querySelector("#nodeShape");
 const nodeColor = document.querySelector("#nodeColor");
 const nodeColorPalette = document.querySelector("#nodeColorPalette");
 const nodeFontSize = document.querySelector("#nodeFontSize");
-const nodeFontFamily = document.querySelector("#nodeFontFamily");
 const addRootTreeItemBtn = document.querySelector("#addRootTreeItemBtn");
 const nodeTreeEmptyHint = document.querySelector("#nodeTreeEmptyHint");
 const nodeTreeEditor = document.querySelector("#nodeTreeEditor");
@@ -98,13 +97,6 @@ const nodeColorOptions = [
   "#fca5a5",
   "#c4b5fd",
 ];
-const fontFamilies = {
-  system: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif',
-  serif: 'Georgia, "Times New Roman", "Noto Serif SC", serif',
-  mono: '"SFMono-Regular", Consolas, "Liberation Mono", "Noto Sans Mono CJK SC", monospace',
-  rounded: '"Arial Rounded MT Bold", "Nunito", "Noto Sans SC", sans-serif',
-};
-
 const state = {
   nodes: [
     {
@@ -119,7 +111,6 @@ const state = {
       width: 184,
       height: 76,
       fontSize: 18,
-      fontFamily: "system",
     },
     {
       id: "node-2",
@@ -133,7 +124,6 @@ const state = {
       width: 220,
       height: 92,
       fontSize: 14,
-      fontFamily: "system",
     },
     {
       id: "node-3",
@@ -147,7 +137,6 @@ const state = {
       width: 184,
       height: 72,
       fontSize: 18,
-      fontFamily: "system",
     },
     {
       id: "node-4",
@@ -161,7 +150,6 @@ const state = {
       width: 136,
       height: 136,
       fontSize: 14,
-      fontFamily: "system",
     },
   ],
   edges: [
@@ -220,11 +208,10 @@ const state = {
 
 const allowedNodeTypes = new Set(["title", "paragraph", "link"]);
 const allowedNodeShapes = new Set(["rounded", "pill", "circle", "folder", "note"]);
-const batchEditableNodeFields = new Set(["type", "shape", "color", "fontSize", "fontFamily"]);
+const batchEditableNodeFields = new Set(["type", "shape", "color", "fontSize"]);
 const allowedEdgeShapes = new Set(["curved", "straight", "elbow"]);
 const allowedEdgeLineStyles = new Set(["solid", "dashed"]);
 const allowedEdgeArrows = new Set(["forward", "backward", "both", "none"]);
-const allowedFontFamilies = new Set(Object.keys(fontFamilies));
 
 const i18n = {
   zh: {
@@ -298,11 +285,6 @@ const i18n = {
     "node.color": "颜色",
     "node.palette": "快速颜色",
     "node.fontSize": "文字大小",
-    "node.fontFamily": "字体",
-    "node.fontSystem": "系统默认",
-    "node.fontSerif": "衬线字体",
-    "node.fontMono": "等宽字体",
-    "node.fontRounded": "圆润字体",
     "node.new": "新节点",
     "node.child": "子节点",
     "node.branch": "新分支",
@@ -319,7 +301,9 @@ const i18n = {
     "node.treeText": "文字",
     "node.treeUrl": "链接",
     "node.treeTextPlaceholder": "输入列表文字",
-    "node.treeUrlPlaceholder": "可选链接地址",
+    "node.treeAddLink": "+Link",
+    "node.treeEditLink": "Link",
+    "node.treeLinkPrompt": "输入链接地址，留空会删除本行链接：",
     "node.treeAddSibling": "加同级",
     "node.treeAddChild": "加子级",
     "node.treeDelete": "删除",
@@ -438,11 +422,6 @@ const i18n = {
     "node.color": "Color",
     "node.palette": "Quick colors",
     "node.fontSize": "Font size",
-    "node.fontFamily": "Font",
-    "node.fontSystem": "System",
-    "node.fontSerif": "Serif",
-    "node.fontMono": "Monospace",
-    "node.fontRounded": "Rounded",
     "node.new": "New node",
     "node.child": "Child node",
     "node.branch": "New branch",
@@ -459,7 +438,9 @@ const i18n = {
     "node.treeText": "Text",
     "node.treeUrl": "Link",
     "node.treeTextPlaceholder": "Enter list text",
-    "node.treeUrlPlaceholder": "Optional URL",
+    "node.treeAddLink": "+Link",
+    "node.treeEditLink": "Link",
+    "node.treeLinkPrompt": "Enter a URL. Leave blank to remove this row link:",
     "node.treeAddSibling": "Add row",
     "node.treeAddChild": "Add child",
     "node.treeDelete": "Delete",
@@ -950,7 +931,6 @@ function createNode(point, options = {}) {
     width: options.width || 184,
     height: options.height || 76,
     fontSize: options.fontSize || 18,
-    fontFamily: options.fontFamily || "system",
     treeItems: cloneTreeItems(options.treeItems),
   };
 
@@ -1187,7 +1167,6 @@ function renderNodes() {
 
     const content = document.createElement("div");
     content.className = "node-content";
-    content.style.fontFamily = fontFamilies[node.fontFamily] || fontFamilies.system;
 
     if (node.type === "title") {
       const title = document.createElement("h3");
@@ -1609,7 +1588,6 @@ function syncInspector() {
     nodeColor.value = node.color;
     syncColorPalette(node.color);
     nodeFontSize.value = getNodeFontSize(node);
-    nodeFontFamily.value = allowedFontFamilies.has(node.fontFamily) ? node.fontFamily : "system";
     renderTreeEditor(node);
   } else {
     nodeTreeEditor.replaceChildren();
@@ -1655,13 +1633,25 @@ function renderTreeEditorItem(item, path) {
     updateSelectedTreeItemField(path, "text", textInput.value);
   });
 
-  const urlInput = document.createElement("input");
-  urlInput.type = "url";
-  urlInput.value = item.url;
-  urlInput.placeholder = t("node.treeUrlPlaceholder");
-  urlInput.setAttribute("aria-label", t("node.treeUrl"));
-  urlInput.addEventListener("input", () => {
-    updateSelectedTreeItemField(path, "url", urlInput.value);
+  const main = document.createElement("div");
+  main.className = "tree-editor-main";
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "tree-editor-title-row";
+
+  const linkButton = document.createElement("button");
+  linkButton.type = "button";
+  linkButton.className = "tree-link-button";
+  linkButton.classList.toggle("is-active", Boolean(item.url));
+  linkButton.textContent = item.url ? t("node.treeEditLink") : t("node.treeAddLink");
+  linkButton.title = item.url || t("node.treeUrl");
+  linkButton.setAttribute("aria-label", t("node.treeUrl"));
+  linkButton.addEventListener("click", () => {
+    const nextUrl = window.prompt(t("node.treeLinkPrompt"), item.url || "");
+    if (nextUrl === null) {
+      return;
+    }
+    updateSelectedTreeItemField(path, "url", nextUrl.trim(), { refreshEditor: true });
   });
 
   const actions = document.createElement("div");
@@ -1669,22 +1659,32 @@ function renderTreeEditorItem(item, path) {
 
   const addSiblingButton = document.createElement("button");
   addSiblingButton.type = "button";
-  addSiblingButton.textContent = t("node.treeAddSibling");
+  addSiblingButton.className = "tree-icon-button";
+  addSiblingButton.textContent = "+";
+  addSiblingButton.title = t("node.treeAddSibling");
+  addSiblingButton.setAttribute("aria-label", t("node.treeAddSibling"));
   addSiblingButton.addEventListener("click", () => addTreeSibling(path));
 
   const addChildButton = document.createElement("button");
   addChildButton.type = "button";
-  addChildButton.textContent = t("node.treeAddChild");
+  addChildButton.className = "tree-icon-button";
+  addChildButton.textContent = "↳";
+  addChildButton.title = t("node.treeAddChild");
+  addChildButton.setAttribute("aria-label", t("node.treeAddChild"));
   addChildButton.addEventListener("click", () => addTreeChild(path));
 
   const deleteButton = document.createElement("button");
   deleteButton.type = "button";
-  deleteButton.className = "danger";
-  deleteButton.textContent = t("node.treeDelete");
+  deleteButton.className = "tree-icon-button danger";
+  deleteButton.textContent = "×";
+  deleteButton.title = t("node.treeDelete");
+  deleteButton.setAttribute("aria-label", t("node.treeDelete"));
   deleteButton.addEventListener("click", () => deleteTreeItem(path));
 
+  titleRow.append(textInput, linkButton);
   actions.append(addSiblingButton, addChildButton, deleteButton);
-  row.append(branch, textInput, urlInput, actions);
+  main.append(titleRow, actions);
+  row.append(branch, main);
 
   const group = document.createElement("div");
   group.className = "tree-editor-group";
@@ -1773,7 +1773,7 @@ function deleteTreeItem(path) {
   });
 }
 
-function updateSelectedTreeItemField(path, field, value) {
+function updateSelectedTreeItemField(path, field, value, options = {}) {
   if (state.readOnly) {
     return;
   }
@@ -1793,6 +1793,9 @@ function updateSelectedTreeItemField(path, field, value) {
   entry.item[field] = value;
   renderNodes();
   requestAnimationFrame(renderEdges);
+  if (options.refreshEditor) {
+    syncInspector();
+  }
   persistActiveMap();
 }
 
@@ -2256,7 +2259,6 @@ function createBlankMap(name) {
         width: 184,
         height: 76,
         fontSize: 18,
-        fontFamily: "system",
         treeItems: [],
       },
     ],
@@ -3029,7 +3031,7 @@ function normalizeNode(node, index) {
     return null;
   }
 
-  const { isRecurring, recurring, ...nodeData } = node;
+  const { isRecurring, recurring, fontFamily, ...nodeData } = node;
   const id = typeof node.id === "string" && node.id ? node.id : `node-${index + 1}`;
   const type = allowedNodeTypes.has(node.type) ? node.type : "title";
   const rawShape = node.shape === "diamond" ? "folder" : node.shape;
@@ -3049,7 +3051,6 @@ function normalizeNode(node, index) {
     width: clamp(finiteNumber(node.width, defaultDimensions.width), 96, 520),
     height: clamp(finiteNumber(node.height, defaultDimensions.height), 56, 360),
     fontSize: clamp(finiteNumber(node.fontSize, type === "title" ? 18 : 14), 10, 48),
-    fontFamily: allowedFontFamilies.has(node.fontFamily) ? node.fontFamily : "system",
     note: typeof node.note === "string" ? node.note : "",
     noteOpen: Boolean(node.noteOpen),
     noteWidth: clamp(finiteNumber(node.noteWidth, 280), 180, 560),
@@ -3278,7 +3279,6 @@ nodeShape.addEventListener("change", () => updateSelectedNode({ shape: nodeShape
 nodeColor.addEventListener("input", () => updateSelectedNode({ color: nodeColor.value }));
 nodeColor.addEventListener("change", () => syncColorPalette(nodeColor.value));
 nodeFontSize.addEventListener("input", () => updateSelectedNode({ fontSize: finiteNumber(nodeFontSize.value, 18) }));
-nodeFontFamily.addEventListener("change", () => updateSelectedNode({ fontFamily: nodeFontFamily.value }));
 addRootTreeItemBtn.addEventListener("click", addRootTreeItem);
 edgeShape.addEventListener("change", () => updateSelectedEdge({ shape: edgeShape.value }));
 edgeLineStyle.addEventListener("change", () => updateSelectedEdge({ lineStyle: edgeLineStyle.value }));
